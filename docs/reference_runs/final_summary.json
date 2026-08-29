@@ -1,0 +1,12 @@
+{
+  "final_ii": 38.158620689655194,
+  "final_plddt": 83.11832251622566,
+  "passes": true,
+  "length_enforced": true,
+  "guardrail": "PASS length 240-320 and canonical AA",
+  "rag_papers": [
+    "Engineering and evaluation of thermostable IsPETase.pdf (Brott 2022)",
+    "Molecular insigts into enhanced activity.pdf (Qu 2024)"
+  ],
+  "esmfold_status": "Success - avg plDDT 83.1 (real API, not fallback)"
+}

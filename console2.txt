@@ -1,0 +1,100 @@
+PS C:\Users\sylvi\Documents\Pycharm\projects\enzyme-atelier> python main.py --candidates 1 --max-iter 2
+[Orchestrator] Starting agentic loop max_iter=2
+[RAG] Query: PETase thermostability
+[RAG] Retrieved 3 chunks from Engineering and evaluation of thermostable IsPETase.pdf, Molecular insigts into enhanced activity.pdf
+[RAG] Constraints from RAG (Engineering and evaluation of thermostable IsPETase.pdf, Molecular insigts into enhanced activity.pdf): information may be found in the
+online version of the article at the publisher’s website.
+How to cite this article: Brott, S., Pfaff, L.,
+Schuricht, J., Schwarz, J.-N., et al. Engineering and
+evaluation of thermostable IsPETase variants for
+PET degradation. Eng Life Sci. 20...
+
+=== ITERATION 1/2 ===
+[Designer] Clean prompt: Constraints from RAG (Engineering and evaluation of thermostable IsPETase.pdf, Molecular insigts int...
+[HF] Token detected
+[ProGen2] Attempting to load Salesforce/progen2-small...
+[ProGen2] Failed Salesforce/progen2-small: Salesforce/progen2-small is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`
+[ProGen2] Attempting to load hugohrban/progen2-small...
+Special tokens have been added in the vocabulary, make sure the associated word embeddings are fine-tuned or trained.
+
+[ProGen2] Successfully loaded hugohrban/progen2-small
+[Biophys] II=40.91 MW=29646 GRAVY=-0.08 Stable=False
+[Designer] Candidate 0: 121 -> cleaned 290 AA, II check next
+[Designer] Wrote 1 candidates to outputs/best_0.fasta (all 290 AA enforced)
+[Biophys] II=40.91 MW=29646 GRAVY=-0.08 Stable=False
+[ESMFold] Folding seq len 250 attempt 1...
+[ESMFold] API returned 504: {"message": "Endpoint request timed out"}
+[ESMFold] Folding seq len 250 attempt 2...
+[ESMFold] API returned 504: {"message": "Endpoint request timed out"}
+[ESMFold] Folding seq len 250 attempt 3...
+[ESMFold] API returned 504: {"message": "Endpoint request timed out"}
+[ESMFold] All retries failed, using fallback
+[Evaluator] FAIL: II 40.9 >=40 unstable
+
+[Evaluator] Top 2 candidates:
+ - plDDT 73.4 II 40.9 PASS=False - FAIL: II 40.9 >=40 unstable
+
+[Critic] Found 0 PASS, 1 FAIL
+[Critic] Critiquing: FAIL: II 40.9 >=40 unstable
+[Critic RAG] Queried 'PETase stability instability index protein engineering thermostability' -> 3 chunks
+ [0] Molecular insigts into enhanced activity.pdf : both improved thermostability and activity
+in PET degradation. PETaseD186N had the highest degradation efficiency against PET, being
+1.86 and 3.69 tim...
+ [1] Molecular insigts into enhanced activity.pdf : moderate temperatures [16]. This bacterium can secrete a novel enzyme, PET
+hydrolase (PETase), which can not only degrade PET efficiently at moderate ...
+ [2] Engineering and evaluation of thermostable IsPETase.pdf : 1I vari-
+ant. Thermostability strongly depends on the flexibility of
+the protein. A variety of interactions, such as ionic interac-
+tions, disulfide b...
+
+[Critic] Suggestion saved to outputs/critique.json
+
+FAILURE: FAIL: II 40.9 >=40 unstable
+Sequence had II=40.9 plDDT=73.4 len=290
+
+RAG-BASED FIX (from Engineering and evaluation of thermostable IsPETase.pdf, Molecular insigts into enhanced activity.pdf):
+- Based on retrieved chunks: both improved thermostability and activity
+in PET degradation. PETaseD186N had the highest degradation efficiency against PET, being
+1.86 and 3.69 times higher than the wild type at 30 and 40 ◦C, respectively. These results
+indicated that this key non-active amino acid was important for modulating t
+- Proposed fixes from RAG:
+    1. Disulfide: both improved thermostability and activity
+in PET degradation. PETaseD186N had the highest degradati
+    2. Thermostability: moderate temperatures [16]. This bacterium can secrete a novel enzyme, PET
+hydrolase (PETase), which
+    3. Salt bridge: D186H per Qu 2024
+
+GUARDRAIL CHECK:
+- PASS: seq len 290 in 240-320 AA window, PASS: canonical AAs only
+- Length OK
+- Must retain catalytic triad S160-D206-H237
+
+NEXT ACTION: Redesign with prompt = "Full-length 290 AA thermostable PETase with both improved thermostability and activity
+in PET degradation. PETaseD186N had t"
+
+[Orchestrator] Next prompt: Thermostable PETase with disulfide N233C S282C and D186N mutation low instability index stable
+
+=== ITERATION 2/2 ===
+[Designer] Clean prompt: Thermostable PETase with disulfide N233C S282C and D186N mutation low instability index stable...
+[HF] Token detected
+[ProGen2] Attempting to load Salesforce/progen2-small...
+[ProGen2] Failed Salesforce/progen2-small: Salesforce/progen2-small is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`
+[ProGen2] Using cached hugohrban/progen2-small
+[Biophys] II=76.32 MW=30704 GRAVY=-0.50 Stable=False
+[Designer] Candidate 0: 290 -> cleaned 290 AA, II check next
+[Designer] Wrote 1 candidates to outputs/best_0.fasta (all 290 AA enforced)
+[Biophys] II=76.32 MW=30704 GRAVY=-0.50 Stable=False
+[ESMFold] Folding seq len 250 attempt 1...
+[ESMFold] API returned 504: {"message": "Endpoint request timed out"}
+[ESMFold] Folding seq len 250 attempt 2...
+[ESMFold] API returned 504: {"message": "Endpoint request timed out"}
+[ESMFold] Folding seq len 250 attempt 3...
+[ESMFold] API returned 504: {"message": "Endpoint request timed out"}
+[ESMFold] All retries failed, using fallback
+[Evaluator] FAIL: II 76.3 >=40 unstable
+
+[Evaluator] Top 2 candidates:
+ - plDDT 65.7 II 76.3 PASS=False - FAIL: II 76.3 >=40 unstable
+[Orchestrator] Max iterations reached

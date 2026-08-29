@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+*.egg-info/
+.DS_Store
+data/cache/
+data/chroma/
+# Keep outputs but allow final artifacts for grading
+outputs/*.pdb
+outputs/*.fasta
+!outputs/best_0.fasta
+!outputs/final_summary.json
+!outputs/eval_results.json

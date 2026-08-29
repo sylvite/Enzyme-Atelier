@@ -1,0 +1,11 @@
+{
+  "action": "redesign",
+  "failure_reason": "FAIL: II 45.5 >=40 unstable",
+  "rag_sources": [
+    "Molecular insigts into enhanced activity.pdf",
+    "Molecular insigts into enhanced activity.pdf",
+    "Engineering and evaluation of thermostable IsPETase.pdf"
+  ],
+  "suggestion": "\nFAILURE: FAIL: II 45.5 >=40 unstable\nSequence had II=45.5 plDDT=50.1 len=290\n\nRAG-BASED FIX (from Engineering and evaluation of thermostable IsPETase.pdf, Molecular insigts into enhanced activity.pdf):\n- Based on retrieved chunks: both improved thermostability and activity\nin PET degradation. PETaseD186N had the highest degradation efficiency against PET, being\n1.86 and 3.69 times higher than the wild type at 30 and 40 \u25e6C, respectively. These results\nindicated that this key non-active amino acid was important for modulating t\n- Proposed fixes from RAG:\n    1. Disulfide: both improved thermostability and activity\nin PET degradation. PETaseD186N had the highest degradati\n    2. Thermostability: moderate temperatures [16]. This bacterium can secrete a novel enzyme, PET\nhydrolase (PETase), which\n    3. Salt bridge: D186H per Qu 2024\n\nGUARDRAIL CHECK:\n- PASS: seq len 290 in 240-320 AA window, PASS: canonical AAs only\n- Length OK\n- Must retain catalytic triad S160-D206-H237\n\nNEXT ACTION: Redesign with prompt = \"Full-length 290 AA thermostable PETase with both improved thermostability and activity\nin PET degradation. PETaseD186N had t\"\n",
+  "new_designer_prompt": "Thermostable PETase with DS1 disulfide C43-C58 and S121E/D186H salt bridge, MNFPRASRLMDLLSYMVVNLLLFILCLALGILAQSAASRDKRLAETAAKE"
+}

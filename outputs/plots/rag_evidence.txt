@@ -1,0 +1,14 @@
+RAG Retrieval for Task 6:
+Sources: Brott et al 2022 (N233C/S282C disulfide, F201I), Qu et al 2024 (D186N)
+Critique RAG sources: ['Engineering and evaluation of thermostable IsPETase.pdf', 'Molecular insigts into enhanced activity.pdf', 'Engineering and evaluation of thermostable IsPETase.pdf']
+Suggestion: 
+FAILURE: FAIL: plDDT 49.5 <=70 poor folding, needs thermostable mutations per RAG
+Sequence had II=39.2 plDDT=49.5 len=290
+
+RAG-BASED FIX (from Engineering and evaluation of thermostable IsPETase.pdf, Molecular insigts into enhanced activity.pdf):
+- Based on retrieved chunks: ance, to the discovery of the N233C and
+S282C substitutions in IsPETase [35]. However, since no
+crystal structure was described for the IsPETaseN233C/S282C
+variant, it can only be speculated on the formation of the
+disulfid
+Chroma collection count: 335

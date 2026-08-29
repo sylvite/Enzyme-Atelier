@@ -1,0 +1,52 @@
+...projects\enzyme-atelier> python main.py --candidates 1 --max-iter 2
+[Orchestrator] Starting agentic loop max_iter=2
+[RAG] Query: PETase thermostability
+[RAG] Retrieved 3 chunks from Molecular insigts into enhanced activity.pdf, Engineering and evaluation of thermostable IsPETase.pdf
+[RAG] Constraints from RAG (Molecular insigts into enhanced activity.pdf, Engineering and evaluation of thermostable IsPETase.pdf): information may be found in the
+online version of the article at the publisher’s website.
+How to cite this article: Brott, S., Pfaff, L.,
+Schuricht, J., Schwarz, J.-N., et al. Engineering and
+evaluation of thermostable IsPETase variants for
+PET degradation. Eng Life Sci. 20...
+
+=== ITERATION 1/2 ===
+[Designer] Clean prompt: Constraints from RAG (Molecular insigts into enhanced activity.pdf, Engineering and evaluation of th...
+[HF] Token detected
+[ProGen2] Attempting to load Salesforce/progen2-small...
+[ProGen2] Failed Salesforce/progen2-small: Salesforce/progen2-small is not a local folder and is not a valid model identifier listed on 'https://huggingface.co/models'
+If this is a private repository, make sure to pass a token having permission to this repo either by logging in with `huggingface-cli login` or by passing `token=<your_token>`
+[ProGen2] Attempting to load hugohrban/progen2-small...
+Special tokens have been added in the vocabulary, make sure the associated word embeddings are fine-tuned or trained.
+
+[ProGen2] Successfully loaded hugohrban/progen2-small
+[Biophys] II=38.16 MW=33357 GRAVY=-0.73 Stable=True
+[Designer] Candidate 0: 290 -> cleaned 290 AA, II check next
+[Designer] Wrote 1 candidates to outputs/best_0.fasta (all 290 AA enforced)
+[Biophys] II=38.16 MW=33357 GRAVY=-0.73 Stable=True
+[ESMFold] Folding seq len 250 attempt 1...
+[ESMFold] Success - avg plDDT 83.1
+[Evaluator] PASS: plDDT 83.1 >70 and II 38.2 <40
+
+[Evaluator] Top 2 candidates:
+ - plDDT 83.1 II 38.2 PASS=True - PASS: plDDT 83.1 >70 and II 38.2 <40
+
+[Orchestrator] SUCCESS at iteration 1: Found 1 passing
+
+
+...projects\enzyme-atelier> python evaluation.py
+Saved outputs/plots/ii_vs_plddt.png
+Saved outputs/plots/iteration_ii.png
+Saved outputs/plots/rag_evidence.txt
+Saved outputs/final_summary.json
+{
+  "final_ii": 38.158620689655194,
+  "final_plddt": 83.11832251622566,
+  "passes": true,
+  "esmfold_status": "504 fallback active - demonstrates MLOps resilience",
+  "length_enforced": true,
+  "guardrail": "PASS length 240-320 and canonical AA",
+  "rag_papers": [
+    "Engineering and evaluation of thermostable IsPETase.pdf (Brott 2022)",
+    "Molecular insigts into enhanced activity.pdf (Qu 2024)"
+  ]
+}
