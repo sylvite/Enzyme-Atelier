@@ -82,32 +82,31 @@ def test_validator_ok():
     assert v.sequence
     assert len(v.sequence) == 290
 
-def test_esmfold_fallback_on_504():
-    """MLOps resilience: 504 timeout -> fallback plDDT 56-73 keeps loop alive (console2)"""
+def test_esmfold_unavailable_on_504():
+    """An exhausted folding service supplies no measurement or synthetic success."""
     # Mock ESMFold tool to simulate 504
     try:
         from src.tools.esmfold_tool import esmfold_fold
     except ImportError:
         pytest.skip("esmfold_tool not found")
 
-    with patch('src.tools.esmfold_tool.requests.post') as mock_post:
+    with patch('src.tools.esmfold_tool.requests.post') as mock_post, patch('src.tools.esmfold_tool.time.sleep') as sleep:
         mock_post.return_value.status_code = 504
         mock_post.return_value.raise_for_status.side_effect = Exception("504 Gateway Timeout")
 
         # Should fall back, not crash
         result = esmfold_fold("MNFPRASRLM" * 29)
-        assert result is not None
-        # Fallback plDDT should be in 56-73 range per your implementation
-        if hasattr(result, 'plddt'):
-            assert 50 <= result.plddt <= 80
+        assert result['plddt'] is None
+        assert result['success'] is False
+        assert result['status'] == 'unavailable'
+        assert result['attempts'] == mock_post.call_count == 3
+        assert sleep.call_count == 2
 
 def test_length_enforcement_121_to_290():
-    """Regression: ProGen2 generated 121 AA must be cleaned to 290 AA (console2/3)"""
-    short_seq = "MNFPRASRLM" * 12 + "A" # 121 AA simulated
-    # Your designer should enforce 290
-    enforced = short_seq.ljust(290, "A")[:290] # Simplified enforcement
-    assert len(enforced) == 290
-    assert 240 <= len(enforced) <= 320
+    """Short generations are rejected, not padded into apparent candidates."""
+    from src.agents.designer_agent import clean_sequence
+    with pytest.raises(ValueError, match="length"):
+        clean_sequence("MNFPRASRLM" * 12 + "A")
 
 def test_rag_evidence_sanitization():
     """Windows cp1252 fix: \u25e6 white bullet degree char must be sanitized"""

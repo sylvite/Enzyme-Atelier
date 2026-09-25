@@ -2,7 +2,8 @@
 Tool 1: ProGen2 generation wrapper - RESILIENT VERSION
 Implements fallback chain + error handling for model registry drift
 """
-from typing import List, Tuple, Optional
+from typing import List, Optional
+from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
@@ -13,20 +14,27 @@ class ProGen2Input(BaseModel):
     num_return: int = Field(default=5, ge=1, le=20)
     model_id_override: Optional[str] = Field(default=None, description="Override for testing specific mirror")
 
+class GenerationStatus(StrEnum):
+    SUCCESS = "success"
+    UNAVAILABLE = "unavailable"
+    INVALID_OUTPUT = "invalid_output"
+
+
 class ProGen2Output(BaseModel):
     sequences: List[str]
     model_id: str
     success: bool
     error: str = ""
+    status: GenerationStatus = GenerationStatus.UNAVAILABLE
 
-# Production fallback chain - ordered by preference
-# Salesforce originals removed in 2025, mirrors are now primary
+# Legacy configured model candidates; availability and compatibility are not
+# guaranteed. Loading another model is distinct from fabricating a sequence.
 MODEL_FALLBACK_CHAIN: list[str] = [
-    "Salesforce/progen2-small",      # original (now 404, kept for backward compat)
-    "hugohrban/progen2-small",       # active mirror - PRIMARY now
+    "Salesforce/progen2-small",
+    "hugohrban/progen2-small",
     "hugohrban/progen2-base",
     "hugohrban/progen2-medium",
-    "Profluent-Bio/progen3-112m",    # next-gen fallback, compatible
+    "Profluent-Bio/progen3-112m",
     "Profluent-Bio/progen3-219m",
 ]
 
@@ -78,8 +86,10 @@ def _load_model_with_fallback(preferred_id: Optional[str] = None):
 def progen2_generate(inp: ProGen2Input) -> ProGen2Output:
     """
     Generates protein sequences with automatic fallback.
-    Graceful degradation for TA without GPU/torch.
+    Unavailable inference returns no sequences. Invalid decoded batches are
+    rejected intact rather than silently repaired or replaced with padding.
     """
+    used_id = ""
     try:
         model, tokenizer, used_id = _load_model_with_fallback(inp.model_id_override)
         import torch
@@ -94,9 +104,17 @@ def progen2_generate(inp: ProGen2Input) -> ProGen2Output:
                 pad_token_id=tokenizer.eos_token_id if tokenizer.eos_token_id is not None else 0
             )
         seqs = [tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
-        return ProGen2Output(sequences=seqs, model_id=used_id, success=True)
+        if len(seqs) != inp.num_return or any(
+            not seq or set(seq) - set("ACDEFGHIKLMNPQRSTVWY") for seq in seqs
+        ):
+            return ProGen2Output(
+                sequences=[], model_id=used_id, success=False,
+                status=GenerationStatus.INVALID_OUTPUT,
+                error="Model returned an empty, noncanonical, or incomplete sequence batch",
+            )
+        return ProGen2Output(sequences=seqs, model_id=used_id, success=True,
+                             status=GenerationStatus.SUCCESS)
     except Exception as e:
-        # Fallback for CI / no torch / all mirrors fail
-        print(f"[progen2_tool] All models failed, using synthetic fallback due to: {e}")
-        synthetic = [inp.prompt_sequence + "A"*inp.max_length]*inp.num_return
-        return ProGen2Output(sequences=synthetic, model_id="fallback-synthetic", success=False, error=str(e)[:500])
+        return ProGen2Output(sequences=[], model_id=used_id, success=False,
+                             status=GenerationStatus.UNAVAILABLE,
+                             error=f"{type(e).__name__}: {e}"[:500])

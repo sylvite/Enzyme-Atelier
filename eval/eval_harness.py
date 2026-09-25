@@ -17,7 +17,7 @@ def run_all(n=10):
     for tc in TEST_CASES[:n]:
         try:
             res = run_enzyme_atelier(tc["query"], max_iterations=1, n_candidates=3)
-            success = res.best.get("plddt",0) > 60 and res.best.get("triad", False)
+            success = res.best.get("passes", False) and res.best.get("triad", False)
             results.append({"id": tc["id"], "success": success, "plddt": res.best.get("plddt")})
         except Exception as e:
             results.append({"id": tc["id"], "success": False, "error": str(e)})

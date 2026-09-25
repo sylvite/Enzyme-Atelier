@@ -1,169 +1,121 @@
-# evaluation.py - Task 6
+"""Render recorded screening results without inventing folding provenance."""
 from pathlib import Path
 import json
 import matplotlib.pyplot as plt
 import pandas as pd
-from Bio import SeqIO
+
+from src.agents.evaluator_agent import recorded_fold_success, recorded_biophys_success, candidate_sort_key
+
 
 def load_history():
-    eval_path = Path("outputs/eval_results.json")
-    critique_path = Path("outputs/critique.json")
-
-    if eval_path.exists():
-        with open(eval_path) as f:
-            eval_data = json.load(f)
-    else:
-        eval_data = []
-
-    if critique_path.exists():
-        with open(critique_path) as f:
-            critique = json.load(f)
-    else:
-        critique = {}
-
-    # episodic log
-    episodic = []
-    ep_path = Path("outputs/episodic_log.jsonl")
-    if ep_path.exists():
-        with open(ep_path) as f:
-            for line in f:
-                episodic.append(json.loads(line))
-
+    """Read existing artifacts; do not run tools or modify the evidence store."""
+    def read_json(path, default):
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+    eval_data = read_json(Path("outputs/eval_results.json"), [])
+    critique = read_json(Path("outputs/critique.json"), {})
+    path = Path("outputs/episodic_log.jsonl")
+    episodic = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()] if path.exists() else []
     return eval_data, critique, episodic
 
-# Fix for Windows cp1252 encoding - replace \u25e6 and other problematic chars
+
 def sanitize_text(text: str) -> str:
-    """Replace problematic unicode that cp1252 can't encode"""
-    replacements = {
-        "\u25e6": "deg",  # white bullet -> deg (was degree C misread)
-        "°": "deg",       # degree symbol -> deg
-        "◦": "deg",       # bullet
-        "→": "->",
-        "←": "<-",
-        "−": "-",         # minus
-        "–": "-",         # en dash
-        "—": "-",         # em dash
-        "’": "'",
-        "“": '"',
-        "”": '"',
-    }
+    """Keep legacy text exports compatible with Windows cp1252."""
+    replacements = {"\u25e6": "deg", "°": "deg", "◦": "deg", "→": "->",
+                    "←": "<-", "−": "-", "–": "-", "—": "-", "’": "'", "“": '"', "”": '"'}
     for old, new in replacements.items():
         text = text.replace(old, new)
-    # Final safety: encode with errors='replace'
-    return text.encode('cp1252', errors='replace').decode('cp1252')
+    return text.encode("cp1252", errors="replace").decode("cp1252")
+
+
+def report_rows(eval_data):
+    """Legacy scores without provenance are unknown, not verified API results."""
+    rows = []
+    for record in eval_data:
+        row = dict(record)
+        if not recorded_biophys_success(row):
+            row.update(ii=None, mw=None, gravy=None, is_stable=None, passes=False)
+            row["biophys_status"] = record.get("biophys_status") if record.get("biophys_status") in ("invalid_input", "unavailable") else "unknown"
+            row["reason"] = record.get("biophys_error") or "No verified biophysics result"
+        if not recorded_fold_success(row):
+            row["plddt"] = None
+            row["passes"] = False
+            row["fold_status"] = record.get("fold_status") if record.get("fold_status") in ("unavailable", "not_run") else "unknown"
+            row["reason"] = record.get("fold_error") or "No verified full-sequence folding result"
+        rows.append(row)
+    return sorted(rows, key=candidate_sort_key)
+
+
+def build_summary(eval_data, generation=None):
+    """Summarize a selected candidate using recorded status, never score guesses."""
+    generation = generation or {}
+    failed_generation = generation.get("generation_status") in ("unavailable", "invalid_output")
+    rows = report_rows(eval_data) if not failed_generation else []
+    best = rows[0] if rows else {}
+    return {
+        "final_ii": best.get("ii"),
+        "final_plddt": best.get("plddt"),
+        "passes": bool(best.get("passes", False)),
+        "esmfold_status": best.get("fold_status", "not_run" if failed_generation else "unknown"),
+        "esmfold_source": best.get("fold_source", "unknown"),
+        "esmfold_attempts": best.get("fold_attempts"),
+        "esmfold_error": best.get("fold_error", ""),
+        "fold_len": best.get("fold_len"),
+        "full_len": best.get("full_len"),
+        "candidate_count": len(rows),
+        "fold_unavailable_count": sum(not recorded_fold_success(row) for row in rows),
+        "biophys_status": best.get("biophys_status", "not_run" if failed_generation else "unknown"),
+        "biophys_source": best.get("biophys_source", "unknown"),
+        "biophys_error": best.get("biophys_error", ""),
+        "biophys_unavailable_count": sum(not recorded_biophys_success(row) for row in rows),
+        "generation_status": generation.get("generation_status", "unknown"),
+        "generation_error": generation.get("generation_error", ""),
+        "generation_model": generation.get("generation_model", ""),
+        "guardrail": "not recorded",
+        "iteration_history": "not recorded in evaluation results",
+    }
+
 
 def plot_metrics():
-    eval_data, critique, episodic = load_history()
-    Path("outputs/plots").mkdir(parents=True, exist_ok=True)
+    """Export final-batch metrics; unavailable measurements are omitted from plots."""
+    eval_data, critique, _ = load_history()
+    generation_path = Path("outputs/generation_result.json")
+    generation = json.loads(generation_path.read_text(encoding="utf-8")) if generation_path.exists() else {}
+    if generation.get("generation_status") in ("unavailable", "invalid_output"):
+        eval_data = []
+    rows = report_rows(eval_data)
+    output = Path("outputs/plots")
+    output.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(6, 4))
+    measured = [row for row in rows if recorded_fold_success(row) and recorded_biophys_success(row)]
+    for row in measured:
+        ax.scatter(row["ii"], row["plddt"], color="green" if row["passes"] else "red")
+    ax.axvline(40, color="r", linestyle="--", label="II threshold 40")
+    ax.axhline(70, color="g", linestyle="--", label="pLDDT threshold 70")
+    ax.set(xlabel="Instability index", ylabel="pLDDT", title="Recorded full-sequence screening results")
+    ax.text(0.02, 0.98, f"Unavailable/unverified metric pairs: {len(rows) - len(measured)}",
+            transform=ax.transAxes, va="top")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output / "ii_vs_plddt.png", dpi=150)
+    plt.close(fig)
+    pd.DataFrame(rows, columns=list(rows[0]) if rows else ["ii", "plddt", "passes", "fold_status"]).to_csv(output / "eval_table.csv", index=False)
 
-    # Detect clean PASS early
-    is_clean_pass = False
-    skip_iter_plot = False
-    if eval_data and all(r.get("passes") for r in eval_data):
-        is_clean_pass = True
-        skip_iter_plot = True
-        print(f"[Eval] Clean PASS on iter1 - critique not invoked, skipping FAIL->retry plot")
-
-    # Plot 1: II vs plDDT
-    if eval_data:
-        df = pd.DataFrame(eval_data)
-        plt.figure(figsize=(6,4))
-        plt.scatter(df["ii"], df["plddt"], c=["green" if p else "red" for p in df["passes"]])
-        plt.axvline(40, color='r', linestyle='--', label='II<40 stable')
-        plt.axhline(70, color='g', linestyle='--', label='plDDT>70')
-        for _, row in df.iterrows():
-            plt.text(row["ii"]+1, row["plddt"]+1, f'{row["reason"][:20]}', fontsize=7)
-        plt.xlabel("Instability Index (lower = stable)")
-        plt.ylabel("plDDT (higher = better folding)")
-        plt.title("Evaluator: II vs plDDT")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig("outputs/plots/ii_vs_plddt.png", dpi=150)
-        print("Saved outputs/plots/ii_vs_plddt.png")
-
-        # Table
-        df.to_csv("outputs/plots/eval_table.csv", index=False)
-
-    """
-        # Plot 2: Iteration improvement
-        if episodic:
-            plt.figure(figsize=(6,3))
-            # Parse episodic log for II over iterations
-            # For now dummy plot showing FAIL->retry
-            plt.bar(["Iter1 II 40.9", "Iter2 II 76.3"], [40.9, 76.3], color=['orange','red'])
-            plt.axhline(40, color='green', linestyle='--')
-            plt.ylabel("II")
-            plt.title("Critic loop: II across iterations (target <40)")
-            plt.tight_layout()
-            plt.savefig("outputs/plots/iteration_ii.png", dpi=150)
-            print("Saved outputs/plots/iteration_ii.png")
-    """
-
-    # Plot 2: Iteration improvement
-    if episodic and not skip_iter_plot:
-        plt.figure(figsize=(6, 3))
-        # Parse episodic log for II over iterations
-        # For now dummy plot showing FAIL->retry
-        plt.bar(["Iter1 II 40.9", "Iter2 II 76.3"], [40.9, 76.3], color=['orange', 'red'])
-        plt.axhline(40, color='green', linestyle='--')
-        plt.ylabel("II")
-        plt.title("Critic loop: II across iterations (target <40)")
-        plt.tight_layout()
-        plt.savefig("outputs/plots/iteration_ii.png", dpi=150)
-        print("Saved outputs/plots/iteration_ii.png")
-    elif is_clean_pass:
-        # Clean PASS case: remove stale plot from failed run, create success plot
-        stale = Path("outputs/plots/iteration_ii.png")
-        if stale.exists():
-            print(f"[Eval] Removing stale {stale} from previous failed run")
-            stale.unlink(missing_ok=True)
-        plt.figure(figsize=(6, 3))
-        plt.bar(["Iteration 1 PASS"], [eval_data[0]["ii"] if eval_data else 38.2], color='green')
-        plt.axhline(40, color='red', linestyle='--', label='II<40')
-        plt.ylabel("II")
-        plt.title("SUCCESS on Iteration 1 - No redesign needed")
-        plt.legend()
-        plt.tight_layout()
-        plt.savefig("outputs/plots/iteration_ii.png", dpi=150)
-        print("Saved outputs/plots/iteration_ii.png (clean PASS version)")
-
-    # Plot 3: RAG retrieval evidence
-    with open("outputs/plots/rag_evidence.txt","w") as f:
-        f.write("RAG Retrieval for Task 6:\n")
-        f.write("Sources: Brott et al 2022 (N233C/S282C disulfide, F201I), Qu et al 2024 (D186N)\n")
-        if critique:
-            f.write(f"Critique RAG sources: {critique.get('rag_sources')}\n")
-            #f.write(f"Suggestion: {critique.get('suggestion','')[:500]}\n")
-            safe_suggestion = sanitize_text(critique.get('suggestion', '')[:500])
-            f.write(f"Suggestion: {safe_suggestion}\n")
-        # Show chroma count
-        try:
-            from src.memory.semantic_store import get_chroma_client
-            client = get_chroma_client()
-            col = client.get_collection("petase_papers")
-            f.write(f"Chroma collection count: {col.count()}\n")
-        except Exception as e:
-            f.write(f"Chroma error: {e}\n")
-    print("Saved outputs/plots/rag_evidence.txt")
-
-    # Final summary JSON for report
-    summary = {
-        "final_ii": eval_data[0]["ii"] if eval_data else None,
-        "final_plddt": eval_data[0]["plddt"] if eval_data else None,
-        "passes": any(r["passes"] for r in eval_data) if eval_data else False,
-        #"esmfold_status": "504 fallback active - demonstrates MLOps resilience",
-        "length_enforced": True,
-        "guardrail": "PASS length 240-320 and canonical AA",
-        "rag_papers": ["Engineering and evaluation of thermostable IsPETase.pdf (Brott 2022)", "Molecular insigts into enhanced activity.pdf (Qu 2024)"]
-    }
-    # Update final_summary esmfold_status dynamically
-    summary["esmfold_status"] = "Success - avg plDDT 83.1 (real API, not fallback)" if eval_data and eval_data[0]["plddt"] > 80 else "504 fallback"
-    #with open("outputs/final_summary.json","w") as f:
-    #    json.dump(summary, f, indent=2)
-    with open("outputs/final_summary.json", "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
-    print("Saved outputs/final_summary.json")
+    # Replace the old fabricated trajectory chart with an explicit absence notice.
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.axis("off")
+    ax.text(0.5, 0.5, "Iteration history unavailable\nNo trajectory can be inferred from the final batch.",
+            ha="center", va="center", transform=ax.transAxes)
+    fig.tight_layout()
+    fig.savefig(output / "iteration_ii.png", dpi=150)
+    plt.close(fig)
+    evidence = "Recorded critique artifact (run association is not recorded):\n"
+    evidence += f"Sources: {critique.get('rag_sources', [])}\n"
+    evidence += sanitize_text(critique.get("suggestion", critique.get("reason", "No critique recorded")))
+    (output / "rag_evidence.txt").write_text(evidence, encoding="utf-8")
+    summary = build_summary(eval_data, generation)
+    Path("outputs/final_summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False), encoding="utf-8")
     print(json.dumps(summary, indent=2))
+
 
 if __name__ == "__main__":
     plot_metrics()

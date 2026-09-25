@@ -16,6 +16,7 @@ Reads evaluator results, queries RAG for fixes, proposes new design constraints
 """
 
 from src.memory.semantic_store import get_chroma_client
+from src.agents.evaluator_agent import recorded_fold_success, recorded_biophys_success
 import json
 from pathlib import Path
 
@@ -60,6 +61,19 @@ def critique_eval_results(eval_path="outputs/eval_results.json"):
     if not failing:
         print("[Critic] All candidates PASS - no critique needed")
         return {"action": "stop", "reason": "All pass"}
+
+    # Infrastructure failure is not evidence for a biological redesign.
+    if any(not recorded_fold_success(result) or not recorded_biophys_success(result) for result in failing):
+        critique = {
+            "action": "stop",
+            "reason": "Evaluation evidence unavailable; resolve tool or input errors before redesign",
+            "rag_sources": [],
+        }
+        Path("outputs").mkdir(exist_ok=True)
+        Path("outputs/critique.json").write_text(
+            json.dumps(critique, indent=2), encoding="utf-8"
+        )
+        return critique
 
     # Take worst failing to critique
     worst = failing[0]

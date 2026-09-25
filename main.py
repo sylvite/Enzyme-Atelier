@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from src.agents.designer_agent import design_candidates
+from src.agents.designer_agent import design_candidates, GenerationFailure
 from src.agents.evaluator_agent import evaluate_batch
 from src.agents.critic_agent import critique_eval_results
 from src.agents.rag_agent import rag_constraints
@@ -30,11 +30,16 @@ def main():
 
     constraints = rag_constraints("PETase thermostability")
     prompt = constraints if constraints else "PETase thermostable variant"
+    passing = []
 
     for iteration in range(args.max_iter):
         print(f"\n=== ITERATION {iteration+1}/{args.max_iter} ===")
 
-        fasta_path = design_candidates(prompt, n=args.candidates)
+        try:
+            fasta_path = design_candidates(prompt, n=args.candidates)
+        except GenerationFailure as exc:
+            print(f"[Orchestrator] Generation {exc.status}: {exc}")
+            return 1
         eval_results = evaluate_batch(fasta_path)
 
         passing = [r for r in eval_results if r["passes"]]
@@ -58,5 +63,7 @@ def main():
         else:
             print("[Orchestrator] Max iterations reached")
 
+    return 0 if passing else 1
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

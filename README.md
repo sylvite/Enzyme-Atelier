@@ -1,5 +1,50 @@
 # Enzyme Atelier - ProGen2 Thermostable PETase Designer
 
+## Repair status: Step 2A
+
+Folding failures now return `plddt: null`, `fold_status: unavailable`, and
+`passes: false`. The folding wrapper sends the full candidate once per attempt,
+records attempts/errors, and requires a matching full-sequence PDB response.
+It no longer generates random fallback scores. The critic stops when folding
+evidence is unavailable. Reports use explicit provenance; old results without
+that provenance are labeled unknown, and no iteration trajectory is invented.
+
+Generation failures return an empty batch with an explicit error. The designer
+rejects invalid batches without padding, truncating, deleting residues, or
+injecting substitutions. Valid generated sequences are saved unchanged.
+`outputs/generation_result.json` records generation status and the model used;
+failed generation stops the CLI with a nonzero exit code and invalidates current
+evaluation/summary files so an older result cannot appear to be a new success.
+
+Biophysics uses BioPython measurements only. Invalid input or a calculation
+failure returns missing metrics with a recorded status/error, skips folding,
+and cannot pass evaluation. The critic does not propose biological redesigns
+based on unavailable measurements. Existing historical FASTA files are preserved
+on failure; they must not be interpreted as output from the failed attempt.
+
+The parser defaults to the 0–100 B-factor convention in the
+[official ESM example](https://github.com/facebookresearch/esm#esmfold-structure-prediction).
+It never guesses the scale from a low score. Direct wrapper callers can explicitly
+set `plddt_scale=1` for a verified provider using normalized values. Live endpoint
+availability and scale have not been verified during this repair.
+
+Run the offline regression suite from the project root:
+`python -m pytest tests -q`.
+
+Verification: 82 offline tests pass. No live generation or folding was performed.
+
+This is still a project under repair. Enforced export validation/approval,
+unified orchestration, and the local Transformers/tokenizers
+conflict remain outstanding. See [the baseline audit](docs/project_audit.md).
+The submission-era notes and reference metrics below describe the old demo;
+they are not validation of the repaired application. In particular, their
+random-fallback behavior and production-ready claims are obsolete.
+
+Repair work and regression tests were implemented with Codex assistance; the
+AI-assistance paragraph in the historical notes describes the original submission.
+
+## Original submission notes (historical)
+
 Agentic AI system that designs thermostable PETase variants using ProGen2 + ESMFold. Demonstrates 8 agentic patterns with production-ready evaluation (Week 9).
 
 ## Model Choice

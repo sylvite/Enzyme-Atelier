@@ -1,6 +1,8 @@
 from src.agents.rag_agent import run_rag, rag_constraints
-from src.agents.designer_agent import design_candidates
-from src.agents.evaluator_agent import evaluate_batch # NEW API - was evaluate_parallel
+from src.agents.designer_agent import design_candidates, GenerationFailure
+from src.agents.evaluator_agent import (
+    evaluate_batch, candidate_sort_key, recorded_fold_success, recorded_biophys_success,
+)
 from src.agents.critic_agent import critique_eval_results # NEW API - was critique_and_refine
 from src.guards.petase_validator import PetaseValidator, human_approval_gate
 from src.memory.episodic_store import log_run
@@ -8,10 +10,14 @@ from pathlib import Path
 import json
 
 class AtelierResult:
-    def __init__(self, best, history):
+    def __init__(self, best, history, status="complete", error=""):
         self.best = best
         self.history = history
+        self.status = status
+        self.error = error
     def summary(self):
+        if self.error:
+            return f"Run {self.status}: {self.error}"
         seq = self.best.get('sequence','') or self.best.get('seq','')
         return f"Best: plDDT {self.best.get('plddt')} II {self.best.get('ii')} len {len(seq)}"
 
@@ -35,7 +41,10 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
         print(f"\n=== ITERATION {i+1}/{max_iterations} ===")
 
         # 2. DESIGN - now returns fasta_path, not list of sequences
-        fasta_path = design_candidates(prompt, n=n_candidates)
+        try:
+            fasta_path = design_candidates(prompt, n=n_candidates)
+        except GenerationFailure as exc:
+            return AtelierResult({}, history, status=exc.status, error=str(exc))
 
         # Handle both return types: if old version returns list, convert
         if isinstance(fasta_path, list):
@@ -80,9 +89,13 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
     # Best selection
     if history:
         last = history[-1]
-        best = sorted(last, key=lambda x: (-x.get("plddt",0), x.get("ii",999)))[0]
+        best = sorted(last, key=candidate_sort_key)[0] if last else {}
     else:
-        best = {"sequence":"", "seq":"", "plddt":0, "ii":0}
+        best = {}
+
+    if not best or not recorded_fold_success(best) or not recorded_biophys_success(best):
+        return AtelierResult(best, history, status="unavailable",
+                             error="No candidate has complete measured evaluation results")
 
     seq_for_guard = best.get("sequence") or best.get("seq","")
 
