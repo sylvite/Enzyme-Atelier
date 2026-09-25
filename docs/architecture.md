@@ -1,5 +1,23 @@
 # Architecture Document - Enzyme Atelier
 
+> Current implementation: the CLI and evaluation harness call one backend in
+> `src/agents/orchestrator.py`, which owns per-run state and artifacts, passes
+> component results in memory, and requires human approval before final export.
+> See [the current run workflow](run_workflow.md) for commands, statuses, storage,
+> and tested behavior. See [setup](setup.md) for the pinned model/environment.
+> Obsolete file adapters and unused framework dependencies have been removed. The submission-era design below remains a historical
+> reference until the planned full documentation rewrite.
+
+## Reference-design implementation
+
+The default CLI path now runs a bounded planner/controller loop over a pinned
+PETase reference. The planner chooses retrieve, revise, or stop; the controller
+owns validation, exact sequence construction, evaluation, budgets, and human
+review. The OpenAI Responses adapter is optional and requires explicit API
+enablement. See [reference design](reference_design.md) for coordinates, protected
+residues, evidence checks, action records, and the synthetic evaluation/ablation.
+This is the current behavior; the historical diagram below is not its specification.
+
 ## 1. Problem Statement
 Natural PETase unstable above 40C, need 70C for industrial PET recycling. Build agent that designs thermostable variants using ProGen2 + computational validation.
 

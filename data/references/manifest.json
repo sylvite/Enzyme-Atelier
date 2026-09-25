@@ -1,0 +1,10 @@
+{
+  "accession": "A0A0K8P6T7",
+  "source": "https://rest.uniprot.org/uniprotkb/A0A0K8P6T7.json",
+  "retrieved": "2026-09-25",
+  "sequence_version": 1,
+  "record_sha256": "494d3c439cc822981039637f85fd7901f531fb41582375dde845f28ccf950835",
+  "sequence_sha256": "12c59fe9dab495ee536f1c2a5fc28c66e212192096c2351044d4dc139042f5af",
+  "mature_start": 28,
+  "numbering": "one-based full precursor"
+}

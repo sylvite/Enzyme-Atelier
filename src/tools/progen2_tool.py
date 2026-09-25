@@ -1,18 +1,16 @@
 """
-Tool 1: ProGen2 generation wrapper - RESILIENT VERSION
-Implements fallback chain + error handling for model registry drift
+ProGen2 generation with a pinned model and explicit failure results.
 """
-from typing import List, Optional
+from typing import List
 from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
 class ProGen2Input(BaseModel):
-    prompt_sequence: str = Field(description="N-terminal prompt, e.g., catalytic triad context")
-    max_length: int = Field(default=100, ge=10, le=350)
+    prompt_sequence: str = Field(description="N-terminal amino-acid sequence prefix")
+    max_length: int = Field(default=100, ge=10, le=350, description="Maximum new sequence tokens")
     temperature: float = Field(default=0.8, ge=0.1, le=1.5)
     num_return: int = Field(default=5, ge=1, le=20)
-    model_id_override: Optional[str] = Field(default=None, description="Override for testing specific mirror")
 
 class GenerationStatus(StrEnum):
     SUCCESS = "success"
@@ -27,81 +25,56 @@ class ProGen2Output(BaseModel):
     error: str = ""
     status: GenerationStatus = GenerationStatus.UNAVAILABLE
 
-# Legacy configured model candidates; availability and compatibility are not
-# guaranteed. Loading another model is distinct from fabricating a sequence.
-MODEL_FALLBACK_CHAIN: list[str] = [
-    "Salesforce/progen2-small",
-    "hugohrban/progen2-small",
-    "hugohrban/progen2-base",
-    "hugohrban/progen2-medium",
-    "Profluent-Bio/progen3-112m",
-    "Profluent-Bio/progen3-219m",
-]
-
+MODEL_ID = "hugohrban/progen2-small"
+MODEL_REVISION = "43237a0b733c6629226a079266d2985c9fdce9b7"
+MODEL_REFERENCE = f"{MODEL_ID}@{MODEL_REVISION}"
 _model_cache = {}
 
-def _load_model_with_fallback(preferred_id: Optional[str] = None):
-    """
-    Tries chain of models, returns first that loads.
-    This is the resilience pattern for model registry drift.
-    """
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-    import os
 
-    # Build try list: preferred first, then chain without duplicates
-    try_list = []
-    if preferred_id:
-        try_list.append(preferred_id)
-    for mid in MODEL_FALLBACK_CHAIN:
-        if mid not in try_list:
-            try_list.append(mid)
+def _load_model():
+    """Load only the supported revision; remote Python code is revision-pinned."""
+    from huggingface_hub import hf_hub_download
+    from transformers import AutoModelForCausalLM, PreTrainedTokenizerFast
 
-    last_error = None
-    hf_token = os.getenv("HF_TOKEN")
-    if hf_token:
-        print(f"[HF] Token detected")
-    else:
-        print("[HF] WARNING: No HF_TOKEN in env - using anonymous")
-    for model_id in try_list:
-        # Use cache if already loaded
-        if model_id in _model_cache:
-            print(f"[ProGen2] Using cached {model_id}")
-            return _model_cache[model_id][0], _model_cache[model_id][1], model_id
+    if MODEL_REFERENCE not in _model_cache:
+        tokenizer_path = hf_hub_download(MODEL_ID, "tokenizer.json", revision=MODEL_REVISION)
+        # This repository supplies tokenizer.json, not GPT2 vocab/merges files.
+        # ProGen's forward sequence delimiters are 1 and 2.
+        tokenizer = PreTrainedTokenizerFast(
+            tokenizer_file=tokenizer_path, bos_token="1", eos_token="2", pad_token="<|pad|>",
+            model_input_names=["input_ids", "attention_mask"],
+            clean_up_tokenization_spaces=False,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_ID, revision=MODEL_REVISION, code_revision=MODEL_REVISION,
+            trust_remote_code=True, use_safetensors=True,
+        )
+        model.eval()
+        _model_cache[MODEL_REFERENCE] = (model, tokenizer)
+    model, tokenizer = _model_cache[MODEL_REFERENCE]
+    return model, tokenizer, MODEL_REFERENCE
 
-        try:
-            print(f"[ProGen2] Attempting to load {model_id}...")
-            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-            model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
-            model.eval()
-            _model_cache[model_id] = (model, tokenizer)
-            print(f"[ProGen2] Successfully loaded {model_id}")
-            return model, tokenizer, model_id
-        except Exception as e:
-            last_error = e
-            print(f"[ProGen2] Failed {model_id}: {str(e)[:300]}")
-            continue
-
-    raise RuntimeError(f"All ProGen2 fallbacks exhausted. Last error: {last_error}")
 
 def progen2_generate(inp: ProGen2Input) -> ProGen2Output:
     """
-    Generates protein sequences with automatic fallback.
+    Generates protein sequences with the supported model revision.
     Unavailable inference returns no sequences. Invalid decoded batches are
     rejected intact rather than silently repaired or replaced with padding.
     """
-    used_id = ""
+    used_id = MODEL_REFERENCE
     try:
-        model, tokenizer, used_id = _load_model_with_fallback(inp.model_id_override)
+        model, tokenizer, used_id = _load_model()
         import torch
-        inputs = tokenizer(inp.prompt_sequence, return_tensors="pt")
+        inputs = tokenizer("1" + inp.prompt_sequence, return_tensors="pt", add_special_tokens=False)
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_length=len(inp.prompt_sequence) + inp.max_length,
+                max_new_tokens=inp.max_length,
+                eos_token_id=tokenizer.eos_token_id,
                 do_sample=True,
                 temperature=inp.temperature,
                 num_return_sequences=inp.num_return,
-                pad_token_id=tokenizer.eos_token_id if tokenizer.eos_token_id is not None else 0
+                pad_token_id=tokenizer.pad_token_id
             )
         seqs = [tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
         if len(seqs) != inp.num_return or any(

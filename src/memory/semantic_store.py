@@ -1,75 +1,70 @@
-"""
-Semantic memory: ChromaDB for RAG + rules
-"""
-import chromadb
+"""Persistent corpus retrieval and non-destructive PDF ingestion."""
 from pathlib import Path
+import hashlib
 
-def get_chroma_client():
-    db_path = Path("data/chroma")
-    db_path.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(db_path))
-    return client
-
-"""
-def ingest_corpus(corpus_dir="data/corpus"):
-    client = get_chroma_client()
-    col = client.get_or_create_collection("petase_papers")
-    # Add docs - in real version parse PDFs
-    col.add(documents=["Thermostable PETase requires disulfide at 43-58, Joo 2018"], ids=["rule_1"])
-    return col.count()
-"""
+import chromadb
 
 
-def ingest_corpus(corpus_dir="data/corpus"):
-    import pymupdf  # PyMuPDF
+def get_chroma_client(db_path="data/chroma"):
+    path = Path(db_path)
+    path.mkdir(parents=True, exist_ok=True)
+    return chromadb.PersistentClient(path=str(path))
 
-    client = get_chroma_client()
-    # Delete old collection so you can re-run ingestion
-    try:
-        client.delete_collection("petase_papers")
-    except:
-        pass
-    col = client.get_or_create_collection("petase_papers")
 
-    pdf_dir = Path(corpus_dir)
-    pdf_dir.mkdir(parents=True, exist_ok=True)
+def ingest_corpus(corpus_dir="data/corpus", db_path="data/chroma"):
+    """Upsert PDFs after parsing all inputs; never replace papers with canned rules.
 
-    docs = []
-    ids = []
-    metadatas = []
+    Re-ingestion updates chunks for the supplied filenames. Papers absent from
+    the directory remain stored. A failed parse leaves the collection untouched.
+    """
+    import pymupdf
 
-    # Auto-find all PDFs you put in data/corpus/
-    for pdf_file in pdf_dir.glob("*.pdf"):
-        print(f"[RAG] Parsing {pdf_file.name}...")
-        try:
-            doc = pymupdf.open(pdf_file)
-            text = ""
-            for page in doc:
-                text += page.get_text()
-            # Chunk into ~1000 char pieces for better retrieval
-            chunk_size = 1000
-            for i in range(0, len(text), chunk_size):
-                chunk = text[i:i + chunk_size].strip()
-                if len(chunk) > 200:  # skip tiny chunks
+    pdfs = sorted(Path(corpus_dir).glob("*.pdf"))
+    if not pdfs:
+        raise ValueError(f"No PDF files found in {corpus_dir}")
+    docs, ids, metadata = [], [], []
+    for pdf in pdfs:
+        start = len(docs)
+        source_id = hashlib.sha256(pdf.name.encode("utf-8")).hexdigest()
+        with pymupdf.open(pdf) as document:
+            for page_number, page in enumerate(document, start=1):
+                text = page.get_text()
+                for offset in range(0, len(text), 1000):
+                    chunk = text[offset:offset + 1000].strip()
+                    if not chunk:
+                        continue
                     docs.append(chunk)
-                    ids.append(f"{pdf_file.stem}_{i // chunk_size}")
-                    metadatas.append({"source": pdf_file.name, "page_chunk": i // chunk_size})
-        except Exception as e:
-            print(f"[RAG] Failed to parse {pdf_file.name}: {e}")
+                    ids.append(f"{source_id}_{page_number}_{offset // 1000}")
+                    metadata.append({"source": pdf.name, "page": page_number,
+                                     "page_chunk": offset // 1000})
+        if len(docs) == start:
+            raise ValueError(f"No extractable text in {pdf.name}; OCR is not provided")
 
-    # Fallback rules if no PDFs found yet (so skeleton still runs)
-    if not docs:
-        print("[RAG] No PDFs found, using fallback rules")
-        docs = [
-            "Structural insight into molecular mechanism of poly (ethylene terephthalate) degradation, Joo et al 2018",
-            "Engineering and evaluation of thermostable IsPETase variants for PET degradation, Brott et al 2021",
-            "Molecular Insights into the Enhanced Activity and/or Thermostability of PET Hydrolase by D186 Mutations, Qu et al 2024",
-            "Large language models generate functional protein sequences across diverse families. Mandani et al 2023",
-            "ProGen2: Exploring the boundaries of protein language models, Nijkamp et al 2023"
-        ]
-        ids = ["rule_1", "rule_2", "rule_3", "rule_4", "rule_5"]
-        metadatas = [{"source": "fallback"}] * 5
+    collection = get_chroma_client(db_path).get_or_create_collection("petase_papers")
+    # One upsert keeps embedding failures from clearing existing evidence.
+    # Chroma limits batch sizes; reject oversize corpora explicitly for now.
+    collection.upsert(documents=docs, ids=ids, metadatas=metadata)
+    current = set(ids)
+    for pdf in pdfs:
+        old = collection.get(where={"source": pdf.name}, include=[])["ids"]
+        stale = [item for item in old if item not in current]
+        if stale:
+            collection.delete(ids=stale)
+    return collection.count()
 
-    col.add(documents=docs, ids=ids, metadatas=metadatas)
-    print(f"[RAG] Ingested {col.count()} chunks from {len(list(pdf_dir.glob('*.pdf')))} PDFs")
-    return col.count()
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Ingest PDF text into the local retrieval store")
+    parser.add_argument("--corpus-dir", default="data/corpus", type=Path)
+    parser.add_argument("--db-path", default="data/chroma", type=Path)
+    args = parser.parse_args()
+    try:
+        count = ingest_corpus(args.corpus_dir, args.db_path)
+    except Exception as exc:
+        parser.exit(1, f"Ingestion failed: {type(exc).__name__}: {exc}\n")
+    print(f"Corpus collection contains {count} chunks")
+
+
+if __name__ == "__main__":
+    main()

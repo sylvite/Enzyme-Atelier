@@ -1,6 +1,43 @@
 # Enzyme Atelier - ProGen2 Thermostable PETase Designer
 
-## Repair status: Step 2A
+## Supported setup
+
+Use Windows x64 with Python 3.11.9 and the pinned environment described in
+[setup and PDF ingestion](docs/setup.md). The local replacement environment is
+`venv`; the previous `.venv` is retained. Select `venv/Scripts/python.exe` when
+running the commands below. The full documentation rewrite is still pending.
+
+## Current workflow
+
+The default CLI path designs constrained variants of a pinned PETase reference.
+An optional OpenAI planner selects evidence-linked substitutions; Python enforces
+sequence, evidence, tool, and budget checks. Passing screening requires explicit
+human review before final export. See [reference design](docs/reference_design.md)
+for the scientific contract, configuration, and limitations, and
+[run workflow](docs/run_workflow.md) for saved artifacts and review.
+
+Run the offline checks without API keys or model downloads:
+
+```powershell
+python -m eval.design_scenarios
+python -m pytest tests -q -p no:cacheprovider --basetemp venv/test-tmp
+```
+
+After configuring `OPENAI_API_KEY`, `OPENAI_MODEL`, and the PDF corpus, this
+command explicitly enables billable planner calls and external folding:
+
+```powershell
+python main.py --mode reference --enable-api --query "Find evidence-backed PETase stability variants" --max-iter 2 --candidates 1
+python main.py --review-run "outputs/runs/<run-id>"
+python evaluation.py --run-dir "outputs/runs/<run-id>"
+```
+
+Add `--review` to review immediately after screening. The exploratory ProGen2
+path is still available with `--mode progen2`. It does not implement the
+reference-based scientific contract. No paid calls were made during Stage 3
+implementation. The submission-era sections below await the planned rewrite.
+
+## Tool-result integrity
 
 Folding failures now return `plddt: null`, `fold_status: unavailable`, and
 `passes: false`. The folding wrapper sends the full candidate once per attempt,
@@ -12,9 +49,9 @@ that provenance are labeled unknown, and no iteration trajectory is invented.
 Generation failures return an empty batch with an explicit error. The designer
 rejects invalid batches without padding, truncating, deleting residues, or
 injecting substitutions. Valid generated sequences are saved unchanged.
-`outputs/generation_result.json` records generation status and the model used;
-failed generation stops the CLI with a nonzero exit code and invalidates current
-evaluation/summary files so an older result cannot appear to be a new success.
+Each run records generation status and model identity in its iteration folder;
+failed generation stops the CLI with a nonzero exit code. Existing runs and
+historical artifacts remain untouched.
 
 Biophysics uses BioPython measurements only. Invalid input or a calculation
 failure returns missing metrics with a recorded status/error, skips folding,
@@ -31,11 +68,13 @@ availability and scale have not been verified during this repair.
 Run the offline regression suite from the project root:
 `python -m pytest tests -q`.
 
-Verification: 82 offline tests pass. No live generation or folding was performed.
+Verification: the offline suite covers tool failures, backend/CLI parity,
+isolated concurrent runs, and approval/export behavior. No live generation or
+folding was performed during these repairs.
 
-This is still a project under repair. Enforced export validation/approval,
-unified orchestration, and the local Transformers/tokenizers
-conflict remain outstanding. See [the baseline audit](docs/project_audit.md).
+This is still a project under repair. The local Transformers/tokenizers conflict,
+scientific validation, and evidence-conditioned generation remain outstanding.
+See [the baseline audit and repair updates](docs/project_audit.md).
 The submission-era notes and reference metrics below describe the old demo;
 they are not validation of the repaired application. In particular, their
 random-fallback behavior and production-ready claims are obsolete.

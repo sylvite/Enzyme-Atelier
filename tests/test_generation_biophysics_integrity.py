@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from Bio import SeqIO
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
 
 from src.tools import progen2_tool as generation
@@ -22,7 +21,7 @@ import main as cli
 
 @pytest.fixture(autouse=True)
 def no_live_tools(monkeypatch):
-    monkeypatch.setattr(generation, "_load_model_with_fallback", Mock(side_effect=RuntimeError("model unavailable")))
+    monkeypatch.setattr(generation, "_load_model", Mock(side_effect=RuntimeError("model unavailable")))
     monkeypatch.setattr(evaluator, "esmfold_fold", Mock(side_effect=AssertionError("Unexpected live fold")))
 
 
@@ -32,7 +31,7 @@ def fake_model(monkeypatch, sequences):
     tokenizer = Mock(return_value={"input_ids": [1]})
     tokenizer.eos_token_id = 0
     tokenizer.decode.side_effect = lambda value, **kwargs: value
-    monkeypatch.setattr(generation, "_load_model_with_fallback", lambda preferred: (model, tokenizer, "test-model"))
+    monkeypatch.setattr(generation, "_load_model", lambda: (model, tokenizer, "test-model"))
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(no_grad=nullcontext))
     return model
 
@@ -40,7 +39,7 @@ def fake_model(monkeypatch, sequences):
 def test_model_load_failure_returns_no_sequences():
     result = generation.progen2_generate(generation.ProGen2Input(prompt_sequence="AAA", num_return=2))
     assert result.success is False and result.sequences == []
-    assert result.status == "unavailable" and result.model_id == ""
+    assert result.status == "unavailable" and result.model_id == generation.MODEL_REFERENCE
     assert "model unavailable" in result.error
 
 
@@ -78,20 +77,20 @@ def test_designer_rejects_without_replacing_existing_fasta(tmp_path, monkeypatch
     monkeypatch.setattr(designer, "progen2_generate", lambda inp: generation.ProGen2Output(
         sequences=[sequence], model_id="test-model", success=True, status="success"))
     with pytest.raises(designer.GenerationFailure):
-        designer.design_candidates("query", n=1)
+        designer.generate_candidates("query", n=1)
     assert fasta.read_text() == ">old\nGGG\n"
-    result = json.loads((tmp_path / "outputs/generation_result.json").read_text())
-    assert result["generation_status"] == "invalid_output" and result["passes"] is False
+    assert not (tmp_path / "outputs/generation_result.json").exists()
 
 
 def test_designer_success_never_mutates_or_truncates(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     sequence = "ACDEFGHIKLMNPQRSTVWY" * 15
     fake_model(monkeypatch, [sequence])
-    path = designer.design_candidates("query", n=1)
-    assert str(next(SeqIO.parse(path, "fasta")).seq) == sequence
-    record = json.loads((tmp_path / "outputs/generation_result.json").read_text())
-    assert record["generation_status"] == "success" and record["generation_model"] == "test-model"
+    batch = designer.generate_candidates("query", n=1)
+    assert batch.sequences == (sequence,)
+    assert batch.model_id == "test-model"
+    assert not (tmp_path / "outputs").exists()
+
 
 
 @pytest.mark.parametrize("entrypoint", ["cli", "orchestrator"])
@@ -99,12 +98,11 @@ def test_generation_failure_stops_before_evaluation(tmp_path, monkeypatch, entry
     monkeypatch.chdir(tmp_path)
     (tmp_path / "outputs").mkdir()
     (tmp_path / "outputs/eval_results.json").write_text('[{"passes": true, "plddt": 99}]')
-    target = cli if entrypoint == "cli" else orchestrator
-    monkeypatch.setattr(target, "rag_constraints", lambda query: "constraints")
+    monkeypatch.setattr(orchestrator, "rag_constraints", lambda query: "constraints")
     evaluate = Mock(side_effect=AssertionError("Must not evaluate stale candidates"))
-    monkeypatch.setattr(target, "evaluate_batch", evaluate)
+    monkeypatch.setattr(orchestrator, "evaluate_one", evaluate)
     if entrypoint == "cli":
-        monkeypatch.setattr(sys, "argv", ["main.py", "--candidates", "1"])
+        monkeypatch.setattr(sys, "argv", ["main.py", "--mode", "progen2", "--query", "query", "--candidates", "1"])
         assert cli.main() == 1
     else:
         result = orchestrator.run_enzyme_atelier("query", n_candidates=1)
@@ -112,9 +110,10 @@ def test_generation_failure_stops_before_evaluation(tmp_path, monkeypatch, entry
         assert result.error
     evaluate.assert_not_called()
     assert not (tmp_path / "outputs/best_0.fasta").exists()
-    assert json.loads((tmp_path / "outputs/eval_results.json").read_text()) == []
-    summary = json.loads((tmp_path / "outputs/final_summary.json").read_text())
-    assert summary["passes"] is False and summary["generation_status"] == "unavailable"
+    assert json.loads((tmp_path / "outputs/eval_results.json").read_text())[0]["passes"] is True
+    run_dir = next((tmp_path / "outputs/runs").iterdir())
+    summary = json.loads((run_dir / "final_summary.json").read_text())
+    assert summary["screening_passes"] is False and summary["status"] == "unavailable"
 
 
 @pytest.mark.parametrize("sequence", ["", "AAA", "A" * 10 + "X", "a" * 10, " AAAAAAAAAA", "AAAAA\nAAAAA"])
@@ -158,20 +157,19 @@ def test_real_biophysics_retains_status_and_metrics():
 def test_biophysics_failure_skips_folding_critique_and_plots(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(ProteinAnalysis, "instability_index", Mock(side_effect=RuntimeError("broken calculation")))
-    (tmp_path / "input.fasta").write_text(">candidate\n" + "A" * 290)
-    rows = evaluator.evaluate_batch("input.fasta")
+    rows = [evaluator.evaluate_one("A" * 290)]
     assert rows[0]["passes"] is False and rows[0]["ii"] is None
     assert rows[0]["fold_status"] == "not_run"
     evaluator.esmfold_fold.assert_not_called()
     rag = Mock(side_effect=AssertionError("Must not critique unavailable measurements"))
     monkeypatch.setattr(critic, "query_rag_for_fix", rag)
-    assert critic.critique_eval_results()["action"] == "stop"
+    assert critic.critique_results(rows)["action"] == "stop"
     rag.assert_not_called()
-    evaluation.plot_metrics()
-    summary = json.loads((tmp_path / "outputs/final_summary.json").read_text())
-    assert summary["passes"] is False and summary["final_ii"] is None
-    assert summary["biophys_status"] == "unavailable"
-    assert summary["esmfold_status"] == "not_run"
+    reported = evaluation.report_rows(rows)
+    assert reported[0]["passes"] is False and reported[0]["ii"] is None
+    assert reported[0]["biophys_status"] == "unavailable"
+    assert reported[0]["fold_status"] == "not_run"
+
 
 
 def test_success_flag_cannot_override_missing_biophysics_provenance(monkeypatch):
@@ -183,12 +181,11 @@ def test_success_flag_cannot_override_missing_biophysics_provenance(monkeypatch)
 
 def test_failed_generation_report_cannot_reuse_old_success(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(designer.GenerationFailure):
-        designer.design_candidates("query", n=1)
-    # Even if a stale evaluation reappears, the recorded failed attempt wins.
+    monkeypatch.setattr(orchestrator, "rag_constraints", lambda query: "constraints")
+    result = orchestrator.run_enzyme_atelier("query", n_candidates=1)
     (tmp_path / "outputs/eval_results.json").write_text('[{"passes": true, "ii": 20, "plddt": 99}]')
-    evaluation.plot_metrics()
-    summary = json.loads((tmp_path / "outputs/final_summary.json").read_text())
-    assert summary["generation_status"] == "unavailable"
-    assert summary["passes"] is False and summary["final_plddt"] is None
-    assert summary["candidate_count"] == 0
+    report_dir = evaluation.plot_run_metrics(result.run_dir)
+    summary = json.loads((report_dir / "summary.json").read_text())
+    assert summary["status"] == "unavailable"
+    assert summary["screening_passes"] is False and summary["final_plddt"] is None
+    assert summary["candidates_evaluated"] == 0

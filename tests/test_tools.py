@@ -1,40 +1,12 @@
 import pytest
-from pathlib import Path
-import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-# Import paths - adjust if your structure is src/tools/biophys.py vs biophys_tool.py
-try:
-    from src.tools.biophys import calculate_ii, check_canonical, check_triad
-    from src.tools.biophys_tool import calc_biophysics, BioPhysInput
-    BIOPHYS_AVAILABLE = True
-except ImportError:
-    try:
-        from src.tools.biophys_tool import calc_biophysics, BioPhysInput
-        BIOPHYS_AVAILABLE = True
-        calculate_ii = None
-    except:
-        BIOPHYS_AVAILABLE = False
-
-try:
-    from src.guards.petase_validator import PetaseValidator
-    VALIDATOR_AVAILABLE = True
-except ImportError:
-    VALIDATOR_AVAILABLE = False
-    # Mock validator for tests if path differs
-    class PetaseValidator:
-        def __init__(self, sequence):
-            if len(sequence) < 240 or len(sequence) > 320:
-                raise ValueError(f"Length {len(sequence)} not in 240-320")
-            if any(c not in "ACDEFGHIKLMNPQRSTVWY" for c in sequence):
-                raise ValueError("Non-canonical AA")
-            self.sequence = sequence
+from src.tools.biophys_tool import calc_biophysics, BioPhysInput
+from src.guards.petase_validator import PetaseValidator
 
 def test_biophys_valid():
     """Deterministic assertion: II calculation works, MW >0"""
-    seq = "MNFPRASRLMQAVTDAA" * 15 # 240 AA
-    if not BIOPHYS_AVAILABLE:
-        pytest.skip("biophys tool not found - check src/tools/ path")
+    seq = "MNFPRASRLMQAVTDAA" * 15
     out = calc_biophysics(BioPhysInput(sequence=seq))
     assert out.molecular_weight > 0
     assert out.ii is not None
@@ -43,27 +15,13 @@ def test_biophys_valid():
 def test_biophys_ii_stable():
     """Outcome assertion: II<40 stable per BioPython Guruprasad"""
     seq = "MNFPRASRLMSVNVDEKKLAEVGLESDEDIDISTLNYEKTETVLRDSAIDCRICDEEFSDRINLLRHITSHGLVNPHICEVCSKNFTSKLSLRIHMLRHNGIHECGECSKIFTKKTSLLLHMRTHTDNRPYSCSKCGKSFSTGANLRKHLKFLHTGEKPYICEICNKSFTLKSNLRNHMKHHTGEKPFSCSHCGKSFIQKSDLRKHLKTHTGEEQYRCMICSKSFAQSSNLKRHMRIHTGEKPYSCSHCSKAFSTGADLRRHMRIHTGEKPYSCSHCGKSFSQKSNLRRH"
-    # This is your clean PASS sequence from console3, II 38.16
-    if not BIOPHYS_AVAILABLE:
-        pytest.skip("biophys tool not found")
+    # Historical sequence fixture; instability alone does not establish function.
     out = calc_biophysics(BioPhysInput(sequence=seq))
     assert out.ii < 40, f"Expected stable II<40, got {out.ii}"
     assert out.ii == pytest.approx(38.16, abs=0.5)
 
-def test_biophys_triad_preserved():
-    """Guardrail: catalytic triad S160-D206-H237 must be preserved - scissors analogy"""
-    seq = "M" * 200 + "SDH" # contains S D H
-    if not BIOPHYS_AVAILABLE:
-        pytest.skip("biophys tool not found")
-    out = calc_biophysics(BioPhysInput(sequence=seq))
-    # Your biophys_score should check triad_intact or similar
-    # If not implemented, check that sequence contains S, D, H
-    assert "S" in seq and "D" in seq and "H" in seq
-    if hasattr(out, 'triad_intact'):
-        assert out.triad_intact == True
-
 def test_validator_length_fail():
-    """Input guard: length 240-320 enforced, 121->290 fix demonstrated"""
+    """Input guard: length 240-320 enforced"""
     with pytest.raises(Exception):
         PetaseValidator(sequence="AAA") # Too short, should fail
     with pytest.raises(Exception):
@@ -72,9 +30,9 @@ def test_validator_length_fail():
 def test_validator_invalid_aa():
     """Output guard: canonical AA only, no B/J/O/U/X/Z"""
     with pytest.raises(Exception):
-        PetaseValidator(sequence="MNFPRASRLMXXX") # X non-canonical
+        PetaseValidator(sequence="A" * 289 + "X") # X non-canonical
     with pytest.raises(Exception):
-        PetaseValidator(sequence="MNFPRASRLMB") # B non-canonical
+        PetaseValidator(sequence="A" * 289 + "B") # B non-canonical
 
 def test_validator_ok():
     """Happy path: valid 290 AA passes all guards"""
@@ -85,16 +43,13 @@ def test_validator_ok():
 def test_esmfold_unavailable_on_504():
     """An exhausted folding service supplies no measurement or synthetic success."""
     # Mock ESMFold tool to simulate 504
-    try:
-        from src.tools.esmfold_tool import esmfold_fold
-    except ImportError:
-        pytest.skip("esmfold_tool not found")
+    from src.tools.esmfold_tool import esmfold_fold
 
     with patch('src.tools.esmfold_tool.requests.post') as mock_post, patch('src.tools.esmfold_tool.time.sleep') as sleep:
         mock_post.return_value.status_code = 504
         mock_post.return_value.raise_for_status.side_effect = Exception("504 Gateway Timeout")
 
-        # Should fall back, not crash
+        # Service failure remains explicit.
         result = esmfold_fold("MNFPRASRLM" * 29)
         assert result['plddt'] is None
         assert result['success'] is False
@@ -104,24 +59,6 @@ def test_esmfold_unavailable_on_504():
 
 def test_length_enforcement_121_to_290():
     """Short generations are rejected, not padded into apparent candidates."""
-    from src.agents.designer_agent import clean_sequence
+    from src.agents.designer_agent import validate_generated_sequence
     with pytest.raises(ValueError, match="length"):
-        clean_sequence("MNFPRASRLM" * 12 + "A")
-
-def test_rag_evidence_sanitization():
-    """Windows cp1252 fix: \u25e6 white bullet degree char must be sanitized"""
-    from pathlib import Path
-    # Simulate PDF chunk with degree symbol misread as white bullet
-    text_with_bullet = "Both improved thermostability and activity at 30\u25e6C"
-
-    def sanitize_text(text):
-        replacements = {"\u25e6": "deg", "°": "deg", "◦": "deg"}
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-        return text
-
-    sanitized = sanitize_text(text_with_bullet)
-    assert "\u25e6" not in sanitized
-    assert "deg" in sanitized
-    # Should be encodable as cp1252 after sanitization
-    sanitized.encode('cp1252')
+        validate_generated_sequence("MNFPRASRLM" * 12 + "A")

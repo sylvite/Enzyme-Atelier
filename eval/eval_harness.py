@@ -1,31 +1,37 @@
-"""
-Evaluation harness - runs 10 test cases
+"""Small live evaluation harness using the same backend as the CLI.
+
+This is not yet the planned ten-case scientific evaluation suite. Runs stop at
+pending review and never approve export automatically.
 """
 import json
 from pathlib import Path
+from uuid import uuid4
 from src.agents.orchestrator import run_enzyme_atelier
 
 TEST_CASES = [
-    {"id": "t1", "query": "Thermostable PETase for 70C", "expect_len": (200,350)},
-    {"id": "t2", "query": "PETase with disulfide for stability", "expect_len": (200,350)},
-    {"id": "t3", "query": "High pLDDT PETase", "expect_len": (200,350)},
-    # add 7 more
+    {"id": "t1", "query": "Thermostable PETase for 70C"},
+    {"id": "t2", "query": "PETase with disulfide for stability"},
+    {"id": "t3", "query": "High pLDDT PETase"},
 ]
 
-def run_all(n=10):
+
+def run_all(n=None, *, output_root="outputs/evaluations"):
+    """Record each case's actual backend status without confusing it with approval."""
+    if n is not None and (type(n) is not int or not 1 <= n <= len(TEST_CASES)):
+        raise ValueError(f"n must be between 1 and {len(TEST_CASES)}")
+    directory = Path(output_root) / uuid4().hex
+    directory.mkdir(parents=True, exist_ok=False)
     results = []
-    for tc in TEST_CASES[:n]:
-        try:
-            res = run_enzyme_atelier(tc["query"], max_iterations=1, n_candidates=3)
-            success = res.best.get("passes", False) and res.best.get("triad", False)
-            results.append({"id": tc["id"], "success": success, "plddt": res.best.get("plddt")})
-        except Exception as e:
-            results.append({"id": tc["id"], "success": False, "error": str(e)})
-    Path("eval/results.json").write_text(json.dumps(results, indent=2))
-    # Compute metrics
-    success_rate = sum(1 for r in results if r["success"])/len(results) if results else 0
-    print(f"Success rate: {success_rate*100:.1f}%")
+    for case in TEST_CASES[:n]:
+        result = run_enzyme_atelier(case["query"], max_iterations=1, n_candidates=3,
+                                    output_root=directory / "runs")
+        results.append({"id": case["id"], "run_id": result.run_id,
+                        "status": result.status, "screening_passes": result.best.get("eligible", False),
+                        "plddt": result.best.get("plddt"), "error": result.error})
+    (directory / "results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(f"Evaluation records: {directory}")
     return results
+
 
 if __name__ == "__main__":
     run_all()

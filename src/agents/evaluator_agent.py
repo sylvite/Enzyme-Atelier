@@ -1,8 +1,6 @@
 """Evaluate candidates without treating unavailable folding as a measurement."""
 
-import json
 import math
-from pathlib import Path
 
 from src.tools.esmfold_tool import esmfold_fold
 from src.tools.biophys_tool import calc_instability
@@ -11,13 +9,15 @@ from src.tools.biophys_tool import calc_instability
 def recorded_fold_success(result):
     """Require explicit provenance and full coverage, including for saved results."""
     score = result.get("plddt")
+    folded_length = result.get("fold_len")
+    full_length = result.get("full_len")
     return (
         result.get("fold_status") == "success"
         and result.get("fold_source") == "esm_atlas"
         and isinstance(score, (int, float)) and not isinstance(score, bool)
         and math.isfinite(score) and 0 <= score <= 100
-        and result.get("fold_len", 0) == result.get("full_len")
-        and result.get("fold_len", 0) > 0
+        and type(folded_length) is int and type(full_length) is int
+        and folded_length == full_length and folded_length > 0
     )
 
 
@@ -91,22 +91,3 @@ def evaluate_one(seq: str, save_pdb=False):
             result["reason"] = f"PASS: plDDT {result['plddt']:.1f} >70 and II {result['ii']:.1f} <40"
     print(f"[Evaluator] {result['reason']}")
     return result
-
-
-def evaluate_batch(fasta_path="outputs/best_0.fasta", top_k=2):
-    """Evaluate FASTA records and persist nullable measurements as JSON null."""
-    from Bio import SeqIO
-
-    results = [evaluate_one(str(record.seq)) for record in SeqIO.parse(fasta_path, "fasta")]
-    results.sort(key=candidate_sort_key)
-    Path("outputs").mkdir(exist_ok=True)
-    Path("outputs/eval_results.json").write_text(
-        json.dumps(results, indent=2, allow_nan=False), encoding="utf-8"
-    )
-    for result in results[:top_k]:
-        print(f"[Evaluator] {result['reason']}")
-    return results
-
-
-if __name__ == "__main__":
-    evaluate_batch()

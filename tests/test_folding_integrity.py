@@ -12,6 +12,7 @@ from src.tools import esmfold_tool as folding
 from src.agents import evaluator_agent as evaluator
 from src.agents import critic_agent as critic
 from src.agents import orchestrator
+from src.agents.designer_agent import CandidateBatch
 import evaluation
 
 
@@ -120,9 +121,11 @@ def test_batch_mixed_results_and_json_null(tmp_path, monkeypatch, offline):
     (tmp_path / "candidates.fasta").write_text(">one\n" + "A" * 290 + "\n>two\n" + "A" * 291 + "\n", encoding="utf-8")
     post, _ = offline
     post.side_effect = [SimpleNamespace(status_code=200, text=pdb_for("A" * 290))] + [SimpleNamespace(status_code=504, text="")] * 3
-    rows = evaluator.evaluate_batch("candidates.fasta")
+    rows = [evaluator.evaluate_one("A" * length) for length in (290, 291)]
+    from src.run_store import write_json
+    write_json(tmp_path / "evaluation.json", rows)
     assert [r["passes"] for r in rows] == [True, False]
-    saved = json.loads((tmp_path / "outputs/eval_results.json").read_text())
+    saved = json.loads((tmp_path / "evaluation.json").read_text())
     assert saved[1]["plddt"] is None and saved[1]["fold_attempts"] == 3
     assert saved[0]["fold_len"] == 290
 
@@ -134,10 +137,10 @@ def test_critic_stops_without_retrieval_for_unavailable(tmp_path, monkeypatch, o
     (tmp_path / "results.json").write_text(json.dumps([result]))
     rag = Mock(side_effect=AssertionError("Unavailable fold must not prompt biological redesign"))
     monkeypatch.setattr(critic, "query_rag_for_fix", rag)
-    decision = critic.critique_eval_results("results.json")
+    decision = critic.critique_results([result])
     assert decision["action"] == "stop"
     rag.assert_not_called()
-    assert json.loads((tmp_path / "outputs/critique.json").read_text())["action"] == "stop"
+    assert not (tmp_path / "outputs/critique.json").exists()
 
 
 @pytest.mark.parametrize("available", [True, False])
@@ -146,8 +149,8 @@ def test_orchestrator_handles_nullable_results(tmp_path, monkeypatch, offline, a
     respond(offline[0], code=200 if available else 504, text=pdb_for("A" * 290))
     result = evaluator.evaluate_one("A" * 290)
     monkeypatch.setattr(orchestrator, "rag_constraints", lambda query: "constraints")
-    monkeypatch.setattr(orchestrator, "design_candidates", lambda *args, **kwargs: "unused.fasta")
-    monkeypatch.setattr(orchestrator, "evaluate_batch", lambda path: [result])
+    monkeypatch.setattr(orchestrator, "generate_candidates", lambda *args, **kwargs: CandidateBatch(("A" * 290,), "test", "query"))
+    monkeypatch.setattr(orchestrator, "evaluate_one", lambda *args, **kwargs: result)
     monkeypatch.setattr(orchestrator, "log_run", Mock())
     output = orchestrator.run_enzyme_atelier("query", max_iterations=1)
     assert output.best["passes"] is available
@@ -165,15 +168,20 @@ def test_report_artifacts_use_provenance(tmp_path, monkeypatch, offline, kind):
         rows = [{"ii": 20, "plddt": 99, "passes": True, "reason": "old result"}]
     else:
         rows = []
-    (tmp_path / "outputs/eval_results.json").write_text(json.dumps(rows))
-    evaluation.plot_metrics()
-    summary = json.loads((tmp_path / "outputs/final_summary.json").read_text())
-    assert summary["passes"] is (kind == "success")
-    assert summary["esmfold_status"] == {"legacy": "unknown", "empty": "unknown"}.get(kind, kind)
-    assert summary["final_plddt"] == (75 if kind == "success" else None)
-    assert summary["guardrail"] == "not recorded"
-    assert (tmp_path / "outputs/plots/ii_vs_plddt.png").exists()
-    assert (tmp_path / "outputs/plots/iteration_ii.png").exists()
+    from src.run_store import create_run, save_result
+    from src.run_models import RunConfig
+    result = create_run(RunConfig(query="test"), tmp_path / "runs")
+    result.history = [[dict(row, iteration=1) for row in rows]] if rows else []
+    save_result(result)
+    output = evaluation.plot_run_metrics(result.run_dir)
+    import pandas as pd
+    table = pd.read_csv(output / "eval_table.csv")
+    if kind == "success":
+        assert table.iloc[0]["plddt"] == 75
+    else:
+        assert table["plddt"].isna().all()
+    assert (output / "ii_vs_plddt.png").exists()
+    assert (output / "iteration_ii.png").exists()
 
 
 def test_low_confidence_is_measured_failure(offline):
@@ -181,15 +189,15 @@ def test_low_confidence_is_measured_failure(offline):
     result = evaluator.evaluate_one("A" * 290)
     assert result["fold_status"] == "success"
     assert result["plddt"] == 65 and result["passes"] is False
-    assert evaluation.build_summary([result])["esmfold_status"] == "success"
+    assert evaluation.report_rows([result])[0]["fold_status"] == "success"
 
 
 def test_rank_passing_before_higher_scoring_failure(offline):
     respond(offline[0], text=pdb_for("A" * 290, 75))
     passing = evaluator.evaluate_one("A" * 290)
     failing = dict(passing, plddt=95, ii=60, passes=False, is_stable=False)
-    summary = evaluation.build_summary([failing, passing])
-    assert summary["passes"] is True and summary["final_plddt"] == 75
+    summary = evaluation.report_rows([failing, passing])[0]
+    assert summary["passes"] is True and summary["plddt"] == 75
 
 
 def test_transport_failure_budget(offline):

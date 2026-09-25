@@ -1,17 +1,16 @@
-python-dotenv>=1.0
-pydantic>=2.6
-langgraph>=0.1
-langchain==0.1.20
-langchain-community==0.0.38
-transformers==4.32.0
-huggingface_hub==0.20.3
-accelerate==0.27.2
-torch>=2.2,<2.4
-biopython>=1.83
-chromadb>=0.5
-requests>=2.31
-pytest>=8.0
-# NOTE: Do not pin tokenizers on Python 3.12 - no wheel for 0.13.3
-pymupdf>=1.23
-pandas
-matplotlib
+# Direct dependencies for Windows x64, Python 3.11.
+# Install requirements-lock.txt for the fully pinned, verified environment.
+python-dotenv==1.2.3
+pydantic==2.13.4
+transformers==4.44.2
+tokenizers==0.19.1
+huggingface-hub==0.36.0
+torch==2.6.0
+numpy==1.26.4
+biopython==1.88
+chromadb==1.5.9
+requests==2.34.2
+pytest==9.1.1
+pymupdf==1.26.7
+pandas==2.3.3
+matplotlib==3.10.8

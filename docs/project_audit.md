@@ -2,6 +2,108 @@
 
 Audit date: 2026-09-24 (America/Chicago). Scope: local checkout, before application changes.
 
+## Repair update: Stage 3 reference design and bounded planning
+
+Implemented on 2026-09-25 after the user selected reference-based PETase variants
+and an optional OpenAI planner, with no paid calls during implementation.
+
+- Saved and checksum-verified UniProt A0A0K8P6T7 (sequence version 1), with a
+  mature-chain/precursor coordinate contract. Variants contain one to three
+  explicit substitutions; catalytic and annotated disulfide residues are protected.
+- Added structured retrieval records with content-bound evidence IDs, complete
+  excerpts, and source/page metadata. Missing/misaligned evidence is explicit.
+- Added a bounded reference controller with a measured wild-type baseline,
+  structured retrieve/revise/stop decisions, exact sequence construction,
+  measured failure feedback, duplicate detection, and enforced budgets.
+- Added an OpenAI Responses REST adapter with strict structured output,
+  refusal/incomplete/error handling, output cap, timeout, no automatic retry,
+  provider/model/usage recording, and no implicit API enablement in the CLI.
+- Reference mode is the CLI default; the existing Python API default remains
+  ProGen2 for backward compatibility. Reference callers pass mode and planner
+  explicitly. ProGen2 remains an exploratory mode, not the reference contract.
+- Revalidation before export reconstructs the variant from recorded changes and
+  evidence. Human review displays substitutions, excerpts, source pages, and
+  baseline deltas; approved exports include a design/evidence record.
+- Added 15 executable synthetic scenarios plus a feedback ablation, using the
+  real controller with fixture tools/planners. Synthetic runs are labeled and
+  cannot be approved for export.
+
+Verification: **163 tests passed**; dependency check and CLI help passed. All
+**15/15 scenarios** matched their expected outcomes. The two scripted revision
+cases passed screening in 2/2 with feedback versus 0/2 without feedback (duplicate
+proposals blocked). These are controlled software results, not biological or
+live-LLM performance claims. Raw scenario records are saved locally under
+`outputs/evaluations/c7829dd6b7804744b636858f17e1e7bc/` and can be regenerated with
+`python -m eval.design_scenarios`.
+
+The implementation/offline acceptance scope is complete. No paid OpenAI calls,
+production corpus rebuild, live embedding download, or live folding check was
+performed. Citation matching does not prove scientific entailment or paper
+numbering; experimental benefit is not inferred from screening passage. See
+[reference design](reference_design.md) for the full contract and remaining
+verification boundaries. Full README/architecture replacement remains deferred.
+
+## Repair update: Step 2C reproducibility and cleanup
+
+Completed on 2026-09-25:
+
+- Built a separate Windows x64 Python 3.11.9 environment at `venv`; the older
+  `.venv` and user's root `.gitignore` were retained. Direct requirements are
+  pinned, and `requirements-lock.txt` captures the complete installed package set.
+- Verified Transformers 4.44.2 / tokenizers 0.19.1 / Torch 2.6.0 compatibility.
+  Removed unused LangChain, LangGraph, and Accelerate dependencies.
+- Pinned ProGen2-small weights and remote code to revision
+  `43237a0b733c6629226a079266d2985c9fdce9b7`. Corrected tokenizer JSON loading and
+  sequence delimiters; removed the unverified model-family fallback chain.
+  Load failures retain the attempted model/revision identity.
+- A real CPU inference check with cached weights generated ten new amino acids
+  successfully (seed 42, prefix `MNFPRASRLM`). This verifies the inference stack,
+  not PETase identity, scientific performance, or full live end-to-end execution.
+- Removed unused tool copies, shared-file agent/report adapters, inactive code,
+  and test-local fake implementations. Regression coverage now uses current APIs.
+- Added `python -m src.memory.semantic_store` for PDF ingestion. Inputs are parsed
+  before database access; upserts retain source/page metadata and do not delete
+  the collection. Missing evidence no longer becomes canned titles/citations.
+  Existing user corpus data was not modified. Retrieval remains metadata-only
+  for generation until Stage 3.
+- Added [setup instructions](setup.md), updated current workflow notes, and
+  removed unused provider/endpoint settings from `.env.example`. The requested
+  full README/architecture rewrite remains deferred.
+
+Verification: **128 offline tests passed**, including PDF extraction and a real
+local Chroma ingest/query roundtrip with offline test embeddings. `pip check`
+reported no broken requirements; all three documented CLI help commands ran;
+the lock-file installation dry run required no changes. Live folding and the
+production embedding-model download/retrieval quality were not tested.
+
+## Repair update: Step 2B shared backend and run records
+
+Completed on 2026-09-25:
+
+- `main.py` now adapts CLI arguments to the same backend used by the evaluation
+  harness. Query and budget validation occurs before tools or artifact creation.
+- Typed configuration/result contracts and unique run directories replace shared
+  pipeline filenames. Each iteration retains generation, evaluations, candidate
+  identities and critique evidence; timestamped events record decisions.
+- Candidate validation runs before evaluation and again before export. Ranking
+  considers the entire recorded history. Passing screening creates a pending
+  review; approval or rejection is explicit and can occur later without reruns.
+- Final exports are published together after approval. Rejection, validation
+  failure, missing measurements, and failed writes cannot publish a final export.
+- Per-run memory uses valid UTF-8 JSONL and stores full sequences. The reader also
+  supports the old concatenated-object format without rewriting historical files.
+- Reports take an explicit run directory, plot actual iteration measurements,
+  and preserve the authoritative run/approval records. New runtime output folders
+  are ignored using `outputs/.gitignore`; the user's root `.gitignore` is unchanged.
+- Replaced the critic's inline-mock tests with checks of the real component and
+  added backend tests for CLI parity, retries, concurrent runs, interrupted/error
+  paths, validation, approval/rejection, saved review, and export-write failures.
+
+Verification: **122 offline tests passed without warnings**. Live models and
+services were not invoked. No new dependencies were installed in this stage.
+See [run_workflow.md](run_workflow.md) for current commands and known limitations.
+Full README/architecture replacement is deferred as requested.
+
 ## Repair update: Step 2A tool-result integrity
 
 Implemented after this baseline audit:
