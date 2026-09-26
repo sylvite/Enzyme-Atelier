@@ -1,5 +1,6 @@
 """Run-local storage. No shared candidate files or latest-run pointer."""
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -16,7 +17,16 @@ def write_json(path: Path, value):
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
         temporary.write_text(text, encoding="utf-8")
-        temporary.replace(path)
+        # Windows readers and file scanners can briefly hold the destination open.
+        # Keep the old checkpoint intact until replacement succeeds.
+        for attempt in range(5):
+            try:
+                temporary.replace(path)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
     finally:
         temporary.unlink(missing_ok=True)
 

@@ -84,7 +84,8 @@ planner and read the [reference design contract](reference_design.md). Use
 See [run workflow](run_workflow.md) for statuses, review, and output files.
 Reference mode uses structured planning and explicit substitutions. The optional
 ProGen2 mode retains metadata-only prose conditioning. Biological performance
-validation and a frontend remain subsequent work.
+validation remains subsequent work. The [Streamlit interface](streamlit_ui.md)
+uses this same backend and includes an offline demonstration.
 
 ## Verification performed
 

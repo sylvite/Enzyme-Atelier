@@ -304,6 +304,24 @@ Acceptance: controlled tests demonstrate different observed failures produce dif
 
 ### Stage 4: Streamlit interface
 
+**Implemented and verified, 2026-09-25.** `streamlit_app.py` wraps the shared
+backend with an offline demonstration, reference and exploratory configuration,
+background progress, cancellation, saved-run selection, candidate/baseline
+comparisons, evidence, decisions, human review, and downloads. Submission tokens
+prevent duplicate starts; each job owns its output directory. Synthetic and
+unavailable results remain visibly distinguished. Demo tools are injected per
+run rather than patched globally. Checkpoint replacement tolerates brief file
+locks with a bounded retry while preserving the previous checkpoint on failure.
+
+Verification: **180 offline tests passed**, including Streamlit AppTest flows,
+session isolation, cancellation, explicit approval/rejection, archives, and
+checkpoint lock behavior. `pip check` and an installed-lock dry run passed with
+Streamlit 1.64.0. Browser smoke testing exercised the local offline interface.
+No paid API or live folding calls were made. A long test-output path encountered
+the Windows path-length limit; the final suite used `--basetemp venv/t4`.
+See [the interface guide](streamlit_ui.md) for launch instructions and local-only,
+cooperative cancellation, and server-restart limitations.
+
 Wrap the same backend with query/configuration inputs, run progress, candidate comparison, evidence, explicit result statuses, review where applicable, and artifact downloads. Design execution so Streamlit reruns cannot accidentally restart a job. Support cancellation and error display.
 
 Acceptance: the UI and CLI share orchestration; separate sessions have isolated artifacts; unavailable or simulated outputs are visibly labeled; displayed summaries derive from saved run results.

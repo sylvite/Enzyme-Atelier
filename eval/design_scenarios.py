@@ -3,10 +3,10 @@
 Metrics describe fixture routing/guardrails only, never enzyme performance.
 """
 from pathlib import Path
-from unittest.mock import patch
 from uuid import uuid4
 
 from src.agents.orchestrator import run_enzyme_atelier
+from src.agents.reference_workflow import ReferenceTools
 from src.design_contract import DesignDecision, Substitution, load_reference
 from src.evidence import EvidenceExcerpt, RetrievalResult
 from src.run_store import write_json
@@ -86,7 +86,7 @@ def measured(sequence, *, confidence=85.0, instability=30.0):
             "reason": "Synthetic screening result", "simulation": True}
 
 
-def run_case(case, output_root, *, feedback_enabled=True):
+def run_case(case, output_root, *, feedback_enabled=True, cancel_requested=None):
     reference = load_reference()["sequence"]
 
     def retrieve(query):
@@ -106,12 +106,12 @@ def run_case(case, output_root, *, feedback_enabled=True):
                 row.update(ii=55.0, is_stable=False, passes=False)
         return row
 
-    with patch("src.agents.reference_workflow.retrieve_evidence", side_effect=retrieve), \
-         patch("src.agents.reference_workflow.evaluate_one", side_effect=evaluate):
-        return run_enzyme_atelier("Synthetic PETase controller evaluation", mode="reference",
-                                  planner=FixturePlanner(case, feedback_enabled),
-                                  max_iterations=1 if case == "iteration_budget" else 2,
-                                  output_root=output_root)
+    return run_enzyme_atelier("Synthetic PETase controller evaluation", mode="reference",
+                              planner=FixturePlanner(case, feedback_enabled),
+                              max_iterations=1 if case == "iteration_budget" else 2,
+                              output_root=output_root, cancel_requested=cancel_requested,
+                              reference_tools=ReferenceTools(retrieve, evaluate))
+
 
 
 def run_all(output_root="outputs/evaluations"):

@@ -17,6 +17,7 @@ from src.agents.critic_agent import critique_results
 from src.guards.petase_validator import PetaseValidator
 from src.memory.episodic_store import log_run
 from src.run_models import AtelierResult, RunConfig
+from src.run_control import RunCancelled, check_cancelled
 from src.run_store import create_run, write_json, record_event, save_result, load_result
 
 
@@ -141,7 +142,8 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
                        *, output_root: str | Path = "outputs/runs",
                        approval_callback: ApprovalCallback | None = None,
                        mode: str = "progen2", planner=None, max_actions: int = 8,
-                       max_retrievals: int = 3) -> AtelierResult:
+                       max_retrievals: int = 3, cancel_requested=None,
+                       reference_tools=None) -> AtelierResult:
     """Execute one bounded run with in-memory handoffs and isolated artifacts.
 
     No callback means pending review, never implicit approval. Eligibility is
@@ -154,16 +156,20 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
     if config.mode == "reference":
         from src.agents.reference_workflow import run_reference_workflow
         return run_reference_workflow(config, output_root=output_root, planner=planner,
-                                      approval_callback=approval_callback)
+                                      approval_callback=approval_callback, cancel_requested=cancel_requested,
+                                      tools=reference_tools)
     result = create_run(config, Path(output_root))
     phase = "retrieval"
     try:
+        check_cancelled(cancel_requested)
         record_event(result.run_dir, "retrieval_started", query=config.query)
         constraints = rag_constraints(config.query)
         write_json(result.run_dir / "retrieval.json", {"query": config.query, "constraints": constraints})
         record_event(result.run_dir, "retrieval_completed", artifact="retrieval.json")
+        check_cancelled(cancel_requested)
         prompt = constraints or config.query
         for iteration in range(1, config.max_iterations + 1):
+            check_cancelled(cancel_requested)
             iteration_dir = result.run_dir / "iterations" / f"{iteration:03d}"
             iteration_dir.mkdir(parents=True)
             phase = "generation"
@@ -193,6 +199,7 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
             records = []
             phase = "evaluation"
             for index, sequence in enumerate(batch.sequences, 1):
+                check_cancelled(cancel_requested)
                 candidate_id = f"iter_{iteration:03d}_candidate_{index:03d}"
                 try:
                     PetaseValidator(sequence=sequence)
@@ -217,6 +224,7 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
                                              description="intermediate unapproved candidate"))
                 rows.append(row)
                 write_json(iteration_dir / "evaluation.json", rows)
+                check_cancelled(cancel_requested)
                 record_event(result.run_dir, "candidate_evaluated", iteration=iteration,
                              candidate_id=candidate_id, eligible=row["eligible"],
                              validation_status=row["validation_status"],
@@ -244,6 +252,7 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
             phase = "critique"
             critique = critique_results(rows)
             write_json(iteration_dir / "critique.json", critique)
+            check_cancelled(cancel_requested)
             record_event(result.run_dir, "critique_completed", iteration=iteration,
                          action=critique.get("action"), reason=critique.get("reason", ""))
             if critique.get("action") != "redesign" or not critique.get("new_designer_prompt"):
@@ -255,7 +264,7 @@ def run_enzyme_atelier(user_query: str, max_iterations: int = 2, n_candidates: i
         result.status = "invalid_output" if exc.status == "invalid_output" else "unavailable"
         result.error, result.stop_reason = str(exc), "generation_failed"
         record_event(result.run_dir, "tool_failed", phase=phase, error=str(exc))
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, RunCancelled):
         result.status, result.stop_reason = "cancelled", "interrupted"
         record_event(result.run_dir, "run_interrupted", phase=phase)
     except Exception as exc:

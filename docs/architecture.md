@@ -10,6 +10,12 @@
 
 ## Reference-design implementation
 
+The local [Streamlit interface](streamlit_ui.md) also calls the same backend.
+An in-process job manager isolates output directories, deduplicates submissions,
+and supplies a cooperative cancellation callback. UI rendering reads saved
+checkpoints and events; it never invokes tools implicitly. Per-run tool injection
+keeps offline demonstration fixtures isolated from concurrent live workflows.
+
 The default CLI path now runs a bounded planner/controller loop over a pinned
 PETase reference. The planner chooses retrieve, revise, or stop; the controller
 owns validation, exact sequence construction, evaluation, budgets, and human

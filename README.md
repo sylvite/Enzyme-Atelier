@@ -9,6 +9,16 @@ running the commands below. The full documentation rewrite is still pending.
 
 ## Current workflow
 
+Launch the local browser interface with:
+
+```powershell
+.\venv\Scripts\python.exe -m streamlit run streamlit_app.py
+```
+
+Start with **Offline demonstration** for a synthetic example without API calls.
+The interface includes progress, cancellation, candidate comparisons, evidence,
+saved runs, explicit review, and downloads. See the [interface guide](docs/streamlit_ui.md).
+
 The default CLI path designs constrained variants of a pinned PETase reference.
 An optional OpenAI planner selects evidence-linked substitutions; Python enforces
 sequence, evidence, tool, and budget checks. Passing screening requires explicit
