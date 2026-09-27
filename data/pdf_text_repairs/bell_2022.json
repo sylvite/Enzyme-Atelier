@@ -1,0 +1,111 @@
+{
+  "method": "exact glyph outlines and metrics, with Unicode/GSUB labels from installed Windows fonts",
+  "documents": [
+    {
+      "filename": "Bell 2022 - Directed Evolution of an Efficient and Thermostable PET Depolymerase.pdf",
+      "sha256": "136bca4d8409a67227cf519fb51471e0d2eac664f3d3b40e1998a4dd69103070",
+      "repairs": [
+        {
+          "font": "Constantia-Italic",
+          "stream_xref": 20,
+          "stream_sha256": "ef594cfde9b083f75a7c05489f7667a56c6280966b8a69dd7c521c70a59357d3",
+          "mappings": {
+            "2e": "1",
+            "39": "2",
+            "42": "3",
+            "4a": "4",
+            "52": "7",
+            "54": "9"
+          }
+        },
+        {
+          "font": "Constantia",
+          "stream_xref": 24,
+          "stream_sha256": "4cebcdae7963f4ab3618b22b33bbb3b2e232bcd3bc51f4ed7d5b6523c93e84ec",
+          "mappings": {
+            "49": "1",
+            "4a": "3",
+            "4b": "0",
+            "4c": "2",
+            "4d": "8",
+            "4e": "5",
+            "50": "6",
+            "51": "7",
+            "55": "4",
+            "57": "9"
+          }
+        },
+        {
+          "font": "Constantia-Bold",
+          "stream_xref": 55,
+          "stream_sha256": "1830a2e2bcd9d4a4bc8879c862dcca3e87bfa01917eaf8d5e68238316e670382",
+          "mappings": {
+            "28": "3",
+            "29": "4",
+            "2a": "7",
+            "2b": "2",
+            "2c": "8",
+            "2d": "1",
+            "2e": "6",
+            "2f": "5",
+            "30": "0",
+            "31": "9"
+          }
+        }
+      ]
+    },
+    {
+      "filename": "Bell 2022 - Supplementary information.pdf",
+      "sha256": "b3b1e7223415f85208362eb73ff11aca76ec10f9e574dd447106e40e68ce13cb",
+      "repairs": [
+        {
+          "font": "Constantia",
+          "stream_xref": 149,
+          "stream_sha256": "0dece79059767340b0c9a4a1480f8a80271673b8ac5d653c91fc13bf28c39372",
+          "mappings": {
+            "3e": "2",
+            "51": "3",
+            "53": "5",
+            "54": "1",
+            "56": "4",
+            "58": "0",
+            "5a": "9",
+            "5b": "8",
+            "5d": "6",
+            "66": "7"
+          }
+        },
+        {
+          "font": "Constantia-Italic",
+          "stream_xref": 145,
+          "stream_sha256": "4776d5a2d33c8fcdfcec47ae78dd2a3d9009128bf65e3a417deaa1ea364a4f6b",
+          "mappings": {
+            "4e": "6",
+            "4f": "5",
+            "51": "7",
+            "52": "0",
+            "54": "2",
+            "55": "4"
+          }
+        },
+        {
+          "font": "Constantia-Bold",
+          "stream_xref": 167,
+          "stream_sha256": "3db648dac41df274243b5a8c23578c183f97d11cdac28037ad73c3ec8a8fd58b",
+          "mappings": {
+            "40": "1",
+            "42": "5",
+            "44": "3",
+            "45": "2",
+            "46": "0",
+            "49": "6",
+            "4a": "4",
+            "4b": "7",
+            "4e": "8",
+            "4f": "9"
+          }
+        }
+      ]
+    }
+  ]
+}

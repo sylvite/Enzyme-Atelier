@@ -71,6 +71,11 @@ implemented. Existing local corpus contents were not rebuilt during this repair.
 
 ## Run and report
 
+The two inspected Bell 2022 PDFs have incomplete embedded character mappings.
+Ingestion now applies a verified, hash-bound repair in memory before extracting
+them; original PDFs remain unchanged. See [Bell text repair](bell_text_repair.md).
+Updated copies with the same filenames require re-verification.
+
 The reference command below enables billable API calls. First configure the
 planner and read the [reference design contract](reference_design.md). Use
 `python -m eval.design_scenarios` for offline checks without external calls.

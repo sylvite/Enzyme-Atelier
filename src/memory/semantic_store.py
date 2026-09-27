@@ -18,6 +18,7 @@ def ingest_corpus(corpus_dir="data/corpus", db_path="data/chroma"):
     the directory remain stored. A failed parse leaves the collection untouched.
     """
     import pymupdf
+    from src.memory.pdf_text import repair_text_mappings
 
     pdfs = sorted(Path(corpus_dir).glob("*.pdf"))
     if not pdfs:
@@ -27,6 +28,7 @@ def ingest_corpus(corpus_dir="data/corpus", db_path="data/chroma"):
         start = len(docs)
         source_id = hashlib.sha256(pdf.name.encode("utf-8")).hexdigest()
         with pymupdf.open(pdf) as document:
+            repaired = repair_text_mappings(document, pdf)
             for page_number, page in enumerate(document, start=1):
                 text = page.get_text()
                 for offset in range(0, len(text), 1000):
@@ -36,7 +38,8 @@ def ingest_corpus(corpus_dir="data/corpus", db_path="data/chroma"):
                     docs.append(chunk)
                     ids.append(f"{source_id}_{page_number}_{offset // 1000}")
                     metadata.append({"source": pdf.name, "page": page_number,
-                                     "page_chunk": offset // 1000})
+                                     "page_chunk": offset // 1000,
+                                     "text_mapping_repaired": repaired})
         if len(docs) == start:
             raise ValueError(f"No extractable text in {pdf.name}; OCR is not provided")
 

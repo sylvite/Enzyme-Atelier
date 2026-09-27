@@ -40,7 +40,8 @@ def test_ingestion_preserves_text_and_page_sources(tmp_path, monkeypatch):
     assert store.ingest_corpus(tmp_path) == 1
     kwargs = collection.upsert.call_args.kwargs
     assert kwargs["documents"] == ["Evidence about protein stability."]
-    assert kwargs["metadatas"] == [{"source": "paper.pdf", "page": 1, "page_chunk": 0}]
+    assert kwargs["metadatas"] == [{"source": "paper.pdf", "page": 1, "page_chunk": 0,
+                                    "text_mapping_repaired": False}]
     collection.delete.assert_called_once_with(ids=["obsolete-chunk"])
     client.delete_collection.assert_not_called()
 
